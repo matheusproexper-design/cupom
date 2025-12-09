@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ecosistema Belconfort</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+              serif: ['Playfair Display', 'serif'],
+            },
+            colors: {
+              gray: {
+                750: '#2d3748',
+                850: '#1a202c',
+                950: '#0d1117',
+              },
+              bel: {
+                blue: '#1e40af', // Deep blue similar to the logo background
+              }
+            }
+          }
+        }
+      }
+
+      // Polyfill for process.env to prevent crashes on Vercel/Client-side
+      window.process = window.process || {};
+      window.process.env = window.process.env || {};
+      
+      // If Vercel injects env vars via import.meta.env during a Vite build, we map it here.
+      // Otherwise, it defaults to empty string to prevent ReferenceErrors.
+      try {
+        if (import.meta && import.meta.env && import.meta.env.VITE_API_KEY) {
+           window.process.env.API_KEY = import.meta.env.VITE_API_KEY;
+        }
+      } catch (e) {
+        // Fallback or ignore if import.meta is not available
+      }
+    </script>
+    <style>
+      body {
+        background-color: #0d1117;
+        color: #e2e8f0;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://aistudiocdn.com/react@^19.2.1",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
+    "react/": "https://aistudiocdn.com/react@^19.2.1/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.31.0",
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.556.0",
+    "jspdf": "https://aistudiocdn.com/jspdf@^3.0.4",
+    "qrcode": "https://aistudiocdn.com/qrcode@^1.5.4",
+    "fuse.js": "https://aistudiocdn.com/fuse.js@^7.1.0",
+    "jsbarcode": "https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/+esm"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
