@@ -7,6 +7,19 @@
     <title>Ecosistema Belconfort</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+    
+    <!-- ERROR HANDLER: Mostra erros na tela se o app falhar ao carregar -->
+    <script>
+      window.onerror = function(msg, url, lineNo, columnNo, error) {
+        const errorContainer = document.getElementById('error-container') || document.createElement('div');
+        errorContainer.id = 'error-container';
+        errorContainer.style.cssText = 'position:fixed; top:0; left:0; width:100%; background:#7f1d1d; color:white; padding:20px; z-index:9999; font-family:monospace;';
+        errorContainer.innerHTML += `<div><strong>Erro:</strong> ${msg} <br/><small>${url}:${lineNo}</small></div>`;
+        document.body.appendChild(errorContainer);
+        return false;
+      };
+    </script>
+
     <script>
       tailwind.config = {
         theme: {
@@ -22,26 +35,40 @@
                 950: '#0d1117',
               },
               bel: {
-                blue: '#1e40af', // Deep blue similar to the logo background
+                blue: '#1e40af', 
               }
             }
           }
         }
       }
-
-      // Polyfill for process.env to prevent crashes on Vercel/Client-side
+    </script>
+    <script>
+      // --- CONFIGURAÇÃO DE AMBIENTE (API KEYS) ---
       window.process = window.process || {};
       window.process.env = window.process.env || {};
+      window.process.env.NODE_ENV = 'production';
       
-      // If Vercel injects env vars via import.meta.env during a Vite build, we map it here.
-      // Otherwise, it defaults to empty string to prevent ReferenceErrors.
+      // Tenta pegar do ambiente (Vercel)
+      let envKey = "";
       try {
-        if (import.meta && import.meta.env && import.meta.env.VITE_API_KEY) {
-           window.process.env.API_KEY = import.meta.env.VITE_API_KEY;
+        // @ts-ignore
+        if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_KEY) {
+           envKey = import.meta.env.VITE_API_KEY;
         }
-      } catch (e) {
-        // Fallback or ignore if import.meta is not available
-      }
+      } catch (e) {}
+
+      // ==================================================================================
+      // >>> ÁREA PARA COLAR A CHAVE API <<<
+      // ==================================================================================
+      // 1. Apague o texto dentro das aspas abaixo.
+      // 2. Cole sua chave do Google Gemini (começa com AIza...).
+      // ==================================================================================
+      
+      const MANUAL_KEY = ""; 
+      
+      // ==================================================================================
+
+      window.process.env.API_KEY = envKey || MANUAL_KEY;
     </script>
     <style>
       body {
@@ -53,6 +80,7 @@
 {
   "imports": {
     "react": "https://aistudiocdn.com/react@^19.2.1",
+    "react-dom/client": "https://aistudiocdn.com/react-dom@^19.2.1/client",
     "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
     "react/": "https://aistudiocdn.com/react@^19.2.1/",
     "@google/genai": "https://aistudiocdn.com/@google/genai@^1.31.0",

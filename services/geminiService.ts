@@ -1,13 +1,17 @@
-
-
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { ReceiptData } from "../types";
 
-// Initialize Gemini
-// Note: process.env.API_KEY is handled by the build/runtime environment
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
 export const generateClientMessage = async (data: ReceiptData): Promise<string> => {
+  // Ensure we are using the globally polyfilled process
+  // @ts-ignore
+  const apiKey = (window.process && window.process.env && window.process.env.API_KEY) || process.env.API_KEY;
+
+  if (!apiKey) {
+      console.warn("API Key missing");
+      return "Erro: Chave de API não configurada. Verifique as configurações.";
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
   const model = "gemini-2.5-flash";
   
   // Calculations for prompt
@@ -66,8 +70,17 @@ export const generateClientMessage = async (data: ReceiptData): Promise<string> 
   }
 };
 
-// Updated: Now accepts a list of catalogNames to match against
 export const parseReceiptFromText = async (text: string, catalogNames: string[] = []): Promise<any> => {
+  // Ensure we are using the globally polyfilled process
+  // @ts-ignore
+  const apiKey = (window.process && window.process.env && window.process.env.API_KEY) || process.env.API_KEY;
+
+  if (!apiKey) {
+      console.warn("API Key missing");
+      throw new Error("API Key not configured");
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
   const model = "gemini-2.5-flash";
 
   const catalogString = catalogNames.join(", ");
@@ -87,28 +100,6 @@ export const parseReceiptFromText = async (text: string, catalogNames: string[] 
     Se não houver produtos ou não corresponderem, deixe o array vazio.
     IGNORE preços e quantidades encontrados no texto, apenas identifique o nome do produto.
 
-    Retorne APENAS um JSON válido.
-
-    Estrutura do JSON:
-    {
-      "clientData": {
-        "saleCode": "Código da venda encontrado ou vazio",
-        "name": "Nome do cliente",
-        "cpf": "000.000.000-00",
-        "date": "Data YYYY-MM-DDThh:mm",
-        "email": "email@exemplo.com",
-        "street": "Rua",
-        "number": "Número",
-        "neighborhood": "Bairro",
-        "city": "Cidade",
-        "complement": "Complemento",
-        "contact1": "Telefone 1",
-        "contact2": "Telefone 2",
-        "paymentMethod": "Forma Pagamento"
-      },
-      "items": ["NOME EXATO DO CATALOGO 1", "NOME EXATO DO CATALOGO 2"]
-    }
-
     Texto para analise:
     ${text}
   `;
@@ -118,7 +109,34 @@ export const parseReceiptFromText = async (text: string, catalogNames: string[] 
       model: model,
       contents: prompt,
       config: {
-        responseMimeType: "application/json"
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            clientData: {
+              type: Type.OBJECT,
+              properties: {
+                saleCode: { type: Type.STRING },
+                name: { type: Type.STRING },
+                cpf: { type: Type.STRING },
+                date: { type: Type.STRING },
+                email: { type: Type.STRING },
+                street: { type: Type.STRING },
+                number: { type: Type.STRING },
+                neighborhood: { type: Type.STRING },
+                city: { type: Type.STRING },
+                complement: { type: Type.STRING },
+                contact1: { type: Type.STRING },
+                contact2: { type: Type.STRING },
+                paymentMethod: { type: Type.STRING },
+              }
+            },
+            items: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+            }
+          }
+        }
       }
     });
 

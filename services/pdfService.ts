@@ -1,4 +1,4 @@
-import jsPDF from 'jspdf';
+import { jsPDF } from 'jspdf';
 import { ReceiptData } from '../types';
 import QRCode from 'qrcode';
 import JsBarcode from 'jsbarcode';
