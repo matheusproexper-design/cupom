@@ -8,7 +8,7 @@ import {
   Calendar, User, MapPin, Hash, Map, Building2, 
   Phone, Download, Printer, CreditCard, Plus, Trash2, Tag, Percent, Search,
   ShieldCheck, Mail, MessageCircle, FileText, Sparkles, Loader2, Barcode,
-  Users, UserPlus, ExternalLink, Share2, Copy
+  Users, UserPlus, ExternalLink, Share2, Copy, RotateCcw
 } from 'lucide-react';
 import Fuse from 'fuse.js';
 import JsBarcode from 'jsbarcode';
@@ -107,6 +107,20 @@ export default function App() {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleResetData = () => {
+    if (window.confirm("Tem certeza que deseja iniciar um novo atendimento? Todos os dados atuais serão apagados.")) {
+        setData(INITIAL_DATA);
+        setSearchTerm("");
+        setDiscountInput("");
+        setSelectedProduct("");
+        setSelectedPrice("");
+        setSelectedQuantity("1");
+        setImportText("");
+        setActiveTab('manual');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   };
 
   const handleAddSalesperson = () => {
@@ -984,6 +998,13 @@ export default function App() {
                  <span className="text-sm font-medium text-gray-300">Ações Rápidas</span>
               </div>
               <div className="flex gap-3">
+                <button
+                  onClick={handleResetData}
+                  className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors shadow-lg shadow-red-900/20"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  Novo Cliente
+                </button>
                 <button
                   onClick={handleSendWhatsApp}
                   className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors shadow-lg shadow-green-900/20"
