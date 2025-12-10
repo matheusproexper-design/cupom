@@ -263,7 +263,7 @@ export default function App() {
       console.error(error);
       // SHOW REAL ERROR MESSAGE
       const msg = error.message || "Erro desconhecido";
-      alert(`Erro na IA: ${msg}\n\nVerifique sua Chave API nas configurações do Vercel ou no arquivo index.html.`);
+      alert(`⚠️ ERRO NA INTELIGÊNCIA ARTIFICIAL ⚠️\n\nDetalhes: ${msg}\n\nSOLUÇÃO: Verifique se a variável VITE_API_KEY está configurada no Vercel.`);
     } finally {
       setIsImporting(false);
     }

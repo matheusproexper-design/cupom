@@ -1,8 +1,39 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { ReceiptData } from "../types";
 
+// Helper to safely get the API Key from various possible sources
+const getApiKey = (): string => {
+  // 1. Try Vite Environment Variable (Standard for Vercel + Vite)
+  try {
+    // @ts-ignore
+    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_KEY) {
+      // @ts-ignore
+      return import.meta.env.VITE_API_KEY;
+    }
+  } catch (e) {}
+
+  // 2. Try Process Env (Fallback / Node shim)
+  if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
+    return process.env.API_KEY;
+  }
+
+  // 3. Check for manual global override
+  // @ts-ignore
+  if (typeof window !== 'undefined' && window.process && window.process.env && window.process.env.API_KEY) {
+    // @ts-ignore
+    return window.process.env.API_KEY;
+  }
+
+  return "";
+};
+
 export const generateClientMessage = async (data: ReceiptData): Promise<string> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    return "ERRO DE CONFIGURAÇÃO: Chave API não encontrada. Verifique as Variáveis de Ambiente no Vercel (VITE_API_KEY).";
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
   const model = "gemini-2.5-flash";
   
   // Calculations for prompt
@@ -55,14 +86,19 @@ export const generateClientMessage = async (data: ReceiptData): Promise<string> 
     });
 
     return response.text || "Não foi possível gerar a mensagem.";
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error generating message:", error);
-    return "Erro ao conectar com a IA. Por favor, tente novamente.";
+    return `Erro na IA: ${error.message || 'Desconhecido'}`;
   }
 };
 
 export const parseReceiptFromText = async (text: string, catalogNames: string[] = []): Promise<any> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    throw new Error("CHAVE API NÃO ENCONTRADA! Adicione VITE_API_KEY nas variáveis de ambiente do Vercel.");
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
   const model = "gemini-2.5-flash";
 
   const catalogString = catalogNames.join(", ");
@@ -127,8 +163,9 @@ export const parseReceiptFromText = async (text: string, catalogNames: string[] 
 
     const parsedData = JSON.parse(jsonText);
     return parsedData;
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error parsing receipt text:", error);
-    throw error;
+    // Re-throw with clear message
+    throw new Error(error.message || "Falha na comunicação com a IA");
   }
 };
