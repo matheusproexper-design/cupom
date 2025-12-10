@@ -33,12 +33,17 @@ export const createPDFDoc = async (data: ReceiptData): Promise<jsPDF> => {
   const contentWidth = pageWidth - (margin * 2);
   const pageHeight = 297;
   
-  // Footer Geometry
-  const footerHeight = 35; 
-  const footerY = pageHeight - footerHeight; // 262
-  const stampY = footerY - 20; // 242
-  
   let y = 10; // Cursor
+
+  // Helper to check for page break
+  const checkPageBreak = (heightNeeded: number) => {
+    if (y + heightNeeded > pageHeight - margin) {
+      doc.addPage();
+      y = margin + 10; // Reset to top with a little padding
+      return true;
+    }
+    return false;
+  };
 
   // --- 1. HEADER SECTION ---
   const headerHeight = 40;
@@ -147,6 +152,8 @@ export const createPDFDoc = async (data: ReceiptData): Promise<jsPDF> => {
 
   // Generic Function to Distribute Row Widths
   const drawDynamicRow = (fields: {label: string, text: string, min: number}[]) => {
+     checkPageBreak(rowHeight);
+
      doc.setFontSize(9);
      doc.setFont("helvetica", "normal");
      
@@ -233,6 +240,8 @@ export const createPDFDoc = async (data: ReceiptData): Promise<jsPDF> => {
     { name: "TOTAL", w: 30, align: "right" }
   ];
 
+  checkPageBreak(20); // Check space for header
+
   doc.setFillColor(COLORS.bgLight);
   doc.setDrawColor(COLORS.borderGray);
   doc.rect(margin, y, contentWidth, 6, 'F'); 
@@ -266,6 +275,26 @@ export const createPDFDoc = async (data: ReceiptData): Promise<jsPDF> => {
         let rowH = 6 + (splitDesc.length * 3.5); 
         if (p.warrantyTime) rowH += 3.5; 
         if (rowH < 8) rowH = 8; 
+
+        // Check if this row fits, if not, new page
+        if (checkPageBreak(rowH)) {
+             // Redraw header on new page
+             doc.setFillColor(COLORS.bgLight);
+             doc.setDrawColor(COLORS.borderGray);
+             doc.rect(margin, y, contentWidth, 6, 'F');
+             doc.line(margin, y, margin + contentWidth, y);
+             doc.line(margin, y + 6, margin + contentWidth, y + 6);
+             let colX = margin;
+             doc.setFontSize(7);
+             doc.setFont("helvetica", "bold");
+             doc.setTextColor(COLORS.brandBlue);
+             cols.forEach(col => {
+                let textX = colX + (col.align === "left" ? 2 : (col.align === "right" ? col.w - 2 : col.w / 2));
+                doc.text(col.name, textX, y + 4, { align: col.align as any });
+                colX += col.w;
+             });
+             y += 6;
+        }
 
         doc.setDrawColor(COLORS.borderGray);
         doc.setLineWidth(0.1);
@@ -325,6 +354,8 @@ export const createPDFDoc = async (data: ReceiptData): Promise<jsPDF> => {
   y += 4; 
 
   // --- 5. SUMMARY SECTION ---
+  checkPageBreak(25); // Check space for summary
+
   const summaryStartY = y;
   const totalsWidth = 90;
   const totalsX = pageWidth - margin - totalsWidth;
@@ -408,6 +439,8 @@ export const createPDFDoc = async (data: ReceiptData): Promise<jsPDF> => {
   const splitObs = doc.splitTextToSize(obsText, contentWidth - 10);
   const obsBoxHeight = 10 + (splitObs.length * 3.5);
 
+  checkPageBreak(obsBoxHeight + 5);
+
   doc.setDrawColor(COLORS.obsBorder);
   doc.setFillColor(COLORS.obsBg);
   doc.roundedRect(margin, y, contentWidth, obsBoxHeight, 2, 2, 'FD');
@@ -424,6 +457,10 @@ export const createPDFDoc = async (data: ReceiptData): Promise<jsPDF> => {
 
   // --- 7. RETURN POLICY (CDC) ---
   const policyHeight = 58; 
+  
+  // Important: Check if policy fits
+  checkPageBreak(policyHeight + 10);
+
   doc.setDrawColor(COLORS.borderGray);
   doc.setFillColor('#f8fafc'); 
   doc.roundedRect(margin, y, contentWidth, policyHeight, 2, 2, 'FD');
@@ -483,7 +520,19 @@ export const createPDFDoc = async (data: ReceiptData): Promise<jsPDF> => {
   policyY += 3.5;
   doc.text("• Após esse prazo, aplicar-se-á a garantia contratual do fabricante, quando houver, conforme certificado.", margin + 5, policyY);
 
-  // --- 8. FOOTER LAYERS ---
+  y += policyHeight;
+
+  // --- 8. FOOTER LAYERS (Relative to Content) ---
+  
+  const footerNeededHeight = 45;
+  // Check if footer fits, otherwise add page
+  checkPageBreak(footerNeededHeight);
+
+  // Position footer below current 'y'
+  const footerStart = y + 10;
+  const stampY = footerStart;
+  const footerY = stampY + 20;
+
   const bracketSize = 5; 
   const sigStartX = (pageWidth / 2) - 15;
   const sigStartY = stampY + 18;
@@ -500,7 +549,9 @@ export const createPDFDoc = async (data: ReceiptData): Promise<jsPDF> => {
 
   doc.setFontSize(7);
   doc.setTextColor(200, 200, 200);
-  doc.text("Documento gerado pelo Ecosistema Belconfort", pageWidth / 2, pageHeight - 10, { align: "center" });
+  // Bottom of page text, or below signature if multiple pages
+  const bottomTextY = Math.max(footerY + 15, pageHeight - 10);
+  doc.text("Documento gerado pelo Ecosistema Belconfort", pageWidth / 2, bottomTextY, { align: "center" });
 
   doc.setDrawColor(80, 90, 120);
   doc.setLineWidth(0.08);

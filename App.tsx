@@ -259,9 +259,11 @@ export default function App() {
 
       setImportText("");
       setActiveTab('manual'); // Switch back to view result
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      alert("Houve um erro ao processar o texto. Tente novamente.");
+      // SHOW REAL ERROR MESSAGE
+      const msg = error.message || "Erro desconhecido";
+      alert(`Erro na IA: ${msg}\n\nVerifique sua Chave API nas configurações do Vercel ou no arquivo index.html.`);
     } finally {
       setIsImporting(false);
     }

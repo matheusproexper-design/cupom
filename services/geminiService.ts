@@ -2,16 +2,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { ReceiptData } from "../types";
 
 export const generateClientMessage = async (data: ReceiptData): Promise<string> => {
-  // Ensure we are using the globally polyfilled process
-  // @ts-ignore
-  const apiKey = (window.process && window.process.env && window.process.env.API_KEY) || process.env.API_KEY;
-
-  if (!apiKey) {
-      console.warn("API Key missing");
-      return "Erro: Chave de API não configurada. Verifique as configurações.";
-  }
-
-  const ai = new GoogleGenAI({ apiKey });
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const model = "gemini-2.5-flash";
   
   // Calculations for prompt
@@ -71,16 +62,7 @@ export const generateClientMessage = async (data: ReceiptData): Promise<string> 
 };
 
 export const parseReceiptFromText = async (text: string, catalogNames: string[] = []): Promise<any> => {
-  // Ensure we are using the globally polyfilled process
-  // @ts-ignore
-  const apiKey = (window.process && window.process.env && window.process.env.API_KEY) || process.env.API_KEY;
-
-  if (!apiKey) {
-      console.warn("API Key missing");
-      throw new Error("API Key not configured");
-  }
-
-  const ai = new GoogleGenAI({ apiKey });
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const model = "gemini-2.5-flash";
 
   const catalogString = catalogNames.join(", ");
@@ -141,7 +123,7 @@ export const parseReceiptFromText = async (text: string, catalogNames: string[] 
     });
 
     const jsonText = response.text;
-    if (!jsonText) throw new Error("No response from AI");
+    if (!jsonText) throw new Error("A IA retornou uma resposta vazia.");
 
     const parsedData = JSON.parse(jsonText);
     return parsedData;
