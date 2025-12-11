@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { ReceiptData } from "../types";
 
@@ -109,14 +110,18 @@ export const parseReceiptFromText = async (text: string, catalogNames: string[] 
     1. Extraia os dados pessoais do cliente.
     2. Tente identificar um CÓDIGO DA VENDA, Número do Pedido ou ID (ex: #1234, 8402, PED-01).
     3. Identifique o CPF ou CNPJ do cliente se houver.
-    4. Identifique se há produtos mencionados que correspondam à lista de catálogos fornecida abaixo.
+    4. Identifique os produtos mencionados que correspondam à lista de catálogos fornecida abaixo.
+    
+    REGRAS IMPORTANTES PARA PRODUTOS:
+    - Extraia a QUANTIDADE de cada item mencionado (ex: "2 camas" = quantidade 2). Se não especificar, assuma 1.
+    - Se o texto mencionar "TRAVESSEIRO DE BRINDE", "GANHOU TRAVESSEIRO" ou qualquer menção a travesseiro grátis, você DEVE mapear para o produto: "TRAVESSEIRO FLOCOS CONFORTO 20CM 60X40 BRANCO".
+    - Procure corresponder o texto do usuário com o NOME EXATO DA LISTA abaixo.
     
     LISTA DE PRODUTOS DO SISTEMA:
     [${catalogString}]
 
-    Se encontrar um produto no texto que pareça ser um item da lista acima, inclua o NOME EXATO DA LISTA no array "items".
-    Se não houver produtos ou não corresponderem, deixe o array vazio.
-    IGNORE preços e quantidades encontrados no texto, apenas identifique o nome do produto.
+    Retorne um JSON com os dados do cliente e um array de itens.
+    Cada item deve ter "name" (string exata da lista) e "quantity" (numero).
 
     Texto para analise:
     ${text}
@@ -151,7 +156,13 @@ export const parseReceiptFromText = async (text: string, catalogNames: string[] 
             },
             items: {
               type: Type.ARRAY,
-              items: { type: Type.STRING },
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  name: { type: Type.STRING },
+                  quantity: { type: Type.NUMBER }
+                }
+              },
             }
           }
         }

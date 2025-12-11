@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { INITIAL_DATA, ReceiptData, PRODUCTS_LIST, PRODUCT_CATALOG, Product } from './types';
 import { generateReceiptPDF, getReceiptBlob } from './services/pdfService';
@@ -8,7 +9,7 @@ import {
   Calendar, User, MapPin, Hash, Map, Building2, 
   Phone, Download, Printer, CreditCard, Plus, Trash2, Tag, Percent, Search,
   ShieldCheck, Mail, MessageCircle, FileText, Sparkles, Loader2, Barcode,
-  Users, UserPlus, ExternalLink, Share2, Copy, RotateCcw
+  Users, UserPlus, ExternalLink, Share2, Copy, RotateCcw, AlertTriangle
 } from 'lucide-react';
 import Fuse from 'fuse.js';
 import JsBarcode from 'jsbarcode';
@@ -81,6 +82,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'manual' | 'import' | 'team'>('manual');
   const [importText, setImportText] = useState("");
   const [isImporting, setIsImporting] = useState(false);
+  const [importError, setImportError] = useState<{title: string, msg: string} | null>(null);
 
   // Temporary state for adding a product
   const [selectedProduct, setSelectedProduct] = useState("");
@@ -118,6 +120,7 @@ export default function App() {
         setSelectedPrice("");
         setSelectedQuantity("1");
         setImportText("");
+        setImportError(null);
         setActiveTab('manual');
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -225,28 +228,47 @@ export default function App() {
     if (!importText.trim()) return;
 
     setIsImporting(true);
+    setImportError(null);
     try {
       // Pass the system product list so AI can match exact names
       const result = await parseReceiptFromText(importText, PRODUCTS_LIST);
       
-      // Map AI identified items to System Products to get prices
-      const newProducts: Product[] = [];
+      // LOGIC UPDATE: Check existing products in the cart to update quantity instead of duplicating
+      // Create a working copy of current products
+      let updatedProducts = [...data.products];
       
       if (result.items && Array.isArray(result.items)) {
-        result.items.forEach((aiItemName: string) => {
-            const systemProduct = PRODUCT_CATALOG.find(p => p.name === aiItemName);
+        result.items.forEach((item: { name: string, quantity: number }) => {
+            // item comes from AI as { name: "EXACT NAME", quantity: 2 }
+            const systemProduct = PRODUCT_CATALOG.find(p => p.name === item.name);
+            
             if (systemProduct) {
-                // Generate Numeric Code (6 digits)
-                const pseudoCode = Math.floor(100000 + Math.random() * 900000).toString();
-                
-                newProducts.push({
-                    code: pseudoCode,
-                    name: systemProduct.name,
-                    price: systemProduct.price,
-                    quantity: 1, // Default manual
-                    warrantyTime: "", // Default manual
-                    warrantyUnit: "MESES"
-                });
+                const quantityToAdd = item.quantity || 1;
+
+                // Check if product already exists in the cart (by exact name)
+                const existingProductIndex = updatedProducts.findIndex(p => p.name === systemProduct.name);
+
+                if (existingProductIndex >= 0) {
+                    // Update quantity
+                    const existingProduct = updatedProducts[existingProductIndex];
+                    updatedProducts[existingProductIndex] = {
+                        ...existingProduct,
+                        quantity: existingProduct.quantity + quantityToAdd
+                    };
+                } else {
+                    // Add new product
+                    // Generate Numeric Code (6 digits)
+                    const pseudoCode = Math.floor(100000 + Math.random() * 900000).toString();
+                    
+                    updatedProducts.push({
+                        code: pseudoCode,
+                        name: systemProduct.name,
+                        price: systemProduct.price,
+                        quantity: quantityToAdd,
+                        warrantyTime: "", // Default manual
+                        warrantyUnit: "MESES"
+                    });
+                }
             }
         });
       }
@@ -254,16 +276,53 @@ export default function App() {
       setData(prev => ({
         ...prev,
         ...result.clientData, // Merge client data
-        products: [...prev.products, ...newProducts], // Append new products found
+        products: updatedProducts, // Use the updated list with merged quantities
       }));
 
       setImportText("");
       setActiveTab('manual'); // Switch back to view result
     } catch (error: any) {
       console.error(error);
-      // SHOW REAL ERROR MESSAGE
-      const msg = error.message || "Erro desconhecido";
-      alert(`⚠️ ERRO NA INTELIGÊNCIA ARTIFICIAL ⚠️\n\nDetalhes: ${msg}\n\nSOLUÇÃO: Verifique se a variável VITE_API_KEY está configurada no Vercel.`);
+      
+      let errorTitle = "Erro na Inteligência Artificial";
+      let errorMsg = error.message || "Erro desconhecido";
+      let detailedMsg = "";
+
+      // Tenta extrair a mensagem JSON se existir (comum em erros do Google)
+      try {
+        const rawMsg = errorMsg;
+        // Search for JSON structure like details: {...} or just {...}
+        // Example: Detalhes: {"error": {"code":403 ...}}
+        const jsonMatch = rawMsg.match(/\{.*\}/);
+        
+        if (jsonMatch) {
+            const parsedError = JSON.parse(jsonMatch[0]);
+            
+            // Check for structure returned by Google
+            const errObj = parsedError.error || parsedError;
+            
+            if (errObj) {
+                if (
+                    (errObj.status === "PERMISSION_DENIED" && errObj.message && errObj.message.includes("leaked")) ||
+                    (errObj.message && errObj.message.includes("API key was reported as leaked"))
+                ) {
+                     errorMsg = "CHAVE API BLOQUEADA PELO GOOGLE";
+                     detailedMsg = "Sua API KEY foi detectada como pública (vazada) e bloqueada por segurança.";
+                } else {
+                     detailedMsg = errObj.message || JSON.stringify(errObj);
+                }
+            }
+        }
+      } catch (e) { /* falha no parse, usa a mensagem original */ }
+
+      // Fallback: Detecta erro de chave vazada por texto simples se o JSON parse falhar
+      if (!detailedMsg && (errorMsg.includes("leaked") || errorMsg.includes("API key"))) {
+          errorTitle = "CHAVE API BLOQUEADA (VAZAMENTO)";
+          errorMsg = "O Google bloqueou sua API KEY por segurança (detectada como pública).";
+          detailedMsg = "SOLUÇÃO: Gere uma nova chave no Google AI Studio e atualize a variável 'VITE_API_KEY' na Vercel.";
+      }
+
+      setImportError({ title: errorTitle, msg: detailedMsg || errorMsg });
     } finally {
       setIsImporting(false);
     }
@@ -306,12 +365,20 @@ export default function App() {
     }
   };
 
-  // --- BUNDLE LOGIC ---
-  const calculateBundleDiscount = (products: Product[]) => {
+  // --- BUNDLE LOGIC & LABELING ---
+  const getBundleDetails = (products: Product[]) => {
+    let totalDiscount = 0;
+    let hasBaseDiscount = false;
+    let hasPillowDiscount = false;
+
     // 1. Identify Inventory of Mattresses (Colchão)
     let casalMattressCount = 0;
     let queenMattressCount = 0;
     let superKingMattressCount = 0;
+
+    // Check if there is ANY product other than the specific pillow
+    const specificPillowName = "TRAVESSEIRO FLOCOS CONFORTO 20CM 60X40 BRANCO";
+    const hasAnyOtherProduct = products.some(p => p.name !== specificPillowName);
 
     products.forEach(p => {
         const name = p.name.toUpperCase();
@@ -322,22 +389,31 @@ export default function App() {
         }
     });
 
-    let totalBundleDiscount = 0;
-
-    // 2. Iterate bases and apply discount if matching mattress exists
+    // 2. Iterate products to apply specific rules
     products.forEach(p => {
         const name = p.name.toUpperCase();
         
+        // RULE: Pillow "FLOCOS CONFORTO" is discounted (free) if there is ANY other product in the cart
+        if (name === specificPillowName) {
+             if (hasAnyOtherProduct) {
+                totalDiscount += (p.price * p.quantity);
+                hasPillowDiscount = true;
+             }
+        }
+
+        // RULE: Base Discounts based on Mattresses
         if (name.startsWith("BASE")) {
-            
             let targetPrice = 0;
+            let applied = false;
+
             if (name.includes("CASAL") && casalMattressCount > 0) {
                 targetPrice = 250.00;
                 const quantityToDiscount = Math.min(p.quantity, casalMattressCount);
                 if (quantityToDiscount > 0) {
                     const discountPerItem = Math.max(0, p.price - targetPrice);
-                    totalBundleDiscount += (discountPerItem * quantityToDiscount);
+                    totalDiscount += (discountPerItem * quantityToDiscount);
                     casalMattressCount -= quantityToDiscount;
+                    applied = true;
                 }
             }
             else if (name.includes("QUEEN") && queenMattressCount > 0) {
@@ -345,8 +421,9 @@ export default function App() {
                 const quantityToDiscount = Math.min(p.quantity, queenMattressCount);
                 if (quantityToDiscount > 0) {
                     const discountPerItem = Math.max(0, p.price - targetPrice);
-                    totalBundleDiscount += (discountPerItem * quantityToDiscount);
+                    totalDiscount += (discountPerItem * quantityToDiscount);
                     queenMattressCount -= quantityToDiscount;
+                    applied = true;
                 }
             }
             else if (name.includes("SUPER KING") && superKingMattressCount > 0) {
@@ -354,19 +431,38 @@ export default function App() {
                 const quantityToDiscount = Math.min(p.quantity, superKingMattressCount);
                 if (quantityToDiscount > 0) {
                     const discountPerItem = Math.max(0, p.price - targetPrice);
-                    totalBundleDiscount += (discountPerItem * quantityToDiscount);
+                    totalDiscount += (discountPerItem * quantityToDiscount);
                     superKingMattressCount -= quantityToDiscount;
+                    applied = true;
                 }
+            }
+
+            if (applied) {
+                hasBaseDiscount = true;
             }
         }
     });
 
-    return totalBundleDiscount;
+    let label = "";
+    if (hasBaseDiscount && hasPillowDiscount) {
+        label = "Desconto Combo + Travesseiro Brinde";
+    } else if (hasBaseDiscount) {
+        label = "Desconto Combo (Base+Colchão)";
+    } else if (hasPillowDiscount) {
+        label = "Desconto (Travesseiro Brinde)";
+    } else {
+        // Fallback or legacy
+        label = "Desconto Promocional";
+    }
+
+    return { totalDiscount, label };
   };
 
   // --- TOTAL CALCULATIONS ---
   const subtotal = data.products.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0);
-  const bundleDiscount = calculateBundleDiscount(data.products);
+  const bundleDetails = getBundleDetails(data.products);
+  const bundleDiscount = bundleDetails.totalDiscount;
+  const bundleDiscountLabel = bundleDetails.label;
   
   let manualDiscount = 0;
   if (data.discountType === 'fixed') {
@@ -383,6 +479,7 @@ export default function App() {
     return {
         ...data,
         bundleDiscount: bundleDiscount,
+        bundleLabel: bundleDiscountLabel, // Pass the computed label
         discountType: data.discountType,
         discountValue: data.discountValue
     } as ReceiptData;
@@ -533,8 +630,29 @@ export default function App() {
                       <span className="w-1 h-6 bg-purple-500 rounded-full"></span>
                       Importação Inteligente
                     </h2>
-                    <span className="text-xs text-gray-500 uppercase tracking-wider">IA Powered</span>
+                    <span className="text-xs text-gray-500 uppercase tracking-wider">AI Powered</span>
                   </div>
+                  
+                  {importError && (
+                    <div className="mb-4 bg-red-900/20 border border-red-500/50 text-red-200 p-4 rounded-lg text-sm flex gap-3 items-start animate-in fade-in slide-in-from-top-2">
+                        <div className="mt-0.5"><AlertTriangle className="w-5 h-5 flex-shrink-0 text-red-400" /></div>
+                        <div>
+                            <p className="font-bold text-red-400 mb-1">{importError.title}</p>
+                            <p className="opacity-90 leading-relaxed">{importError.msg}</p>
+                            {importError.msg.includes("API Studio") || importError.msg.includes("Vercel") ? (
+                                <a 
+                                  href="https://aistudio.google.com/app/apikey" 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 mt-3 text-xs bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-300 px-3 py-1.5 rounded-full transition-colors font-medium"
+                                >
+                                  Gerar Nova Chave API <ExternalLink className="w-3 h-3"/>
+                                </a>
+                            ) : null}
+                        </div>
+                    </div>
+                  )}
+
                   <p className="text-sm text-gray-400 mb-4">
                     Cole abaixo a ficha do cliente (ex: WhatsApp). A IA irá identificar o cliente e os produtos automaticamente.
                   </p>
@@ -812,7 +930,7 @@ export default function App() {
                                 {/* Automatic Bundle Discount Display */}
                                 {bundleDiscount > 0 && (
                                     <div className="flex justify-between items-center text-blue-400">
-                                        <span className="flex items-center gap-1"><Tag className="w-3 h-3"/> Desconto Combo (Base+Colchão):</span>
+                                        <span className="flex items-center gap-1"><Tag className="w-3 h-3"/> {bundleDiscountLabel}:</span>
                                         <span>- {bundleDiscount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                                     </div>
                                 )}
@@ -1155,7 +1273,7 @@ export default function App() {
                              </div>
                              {bundleDiscount > 0 && (
                                 <div className="flex justify-between mb-1 text-blue-500 font-medium">
-                                    <span>Desconto Combo (Base+Colchão):</span>
+                                    <span>{bundleDiscountLabel}:</span>
                                     <span>- {bundleDiscount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                                 </div>
                              )}

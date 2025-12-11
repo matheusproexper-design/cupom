@@ -1,3 +1,5 @@
+
+
 import { jsPDF } from 'jspdf';
 import { ReceiptData } from '../types';
 import QRCode from 'qrcode';
@@ -418,7 +420,9 @@ export const createPDFDoc = async (data: ReceiptData): Promise<jsPDF> => {
 
   drawTotalLine("Subtotal:", subtotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
   if (bundleDiscountAmount > 0) {
-     drawTotalLine("Desconto Combo (Base+Colchão):", `- ${bundleDiscountAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`, COLORS.blue);
+     // Use the provided bundleLabel or fallback if missing (backward compatibility)
+     const bundleLabel = data.bundleLabel ? `${data.bundleLabel}:` : "Desconto Promocional:";
+     drawTotalLine(bundleLabel, `- ${bundleDiscountAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`, COLORS.blue);
   }
   if (manualDiscountAmount > 0) {
     drawTotalLine("Desc. Vendedor:", `- ${manualDiscountAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`, COLORS.red);

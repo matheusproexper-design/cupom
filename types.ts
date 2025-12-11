@@ -34,6 +34,7 @@ export interface ReceiptData {
   discountType: 'fixed' | 'percentage';
   discountValue: number;
   bundleDiscount?: number;
+  bundleLabel?: string; // Novo campo para o rótulo do desconto
 }
 
 export const INITIAL_DATA: ReceiptData = {
@@ -56,6 +57,7 @@ export const INITIAL_DATA: ReceiptData = {
   discountType: 'fixed',
   discountValue: 0,
   bundleDiscount: 0,
+  bundleLabel: '',
 };
 
 // Catalog with applied price rules
@@ -243,7 +245,7 @@ export const PRODUCT_CATALOG: CatalogItem[] = [
   { name: "TRAVESSEIRO CASADINHO 15CM 65X45 BRANCO", price: 70.00 },
   { name: "TRAVESSEIRO ESPUMA LATEX 14CM 40X60 BRANCO", price: 250.00 },
   { name: "TRAVESSEIRO ESPUMA VISCOELASTICA 15CM 60X40 BRANCO", price: 150.00 },
-  { name: "TRAVESSEIRO FLOCOS CONFORTO 20CM 60X40 BRANCO", price: 0.00 },
+  { name: "TRAVESSEIRO FLOCOS CONFORTO 20CM 60X40 BRANCO", price: 30.00 },
   { name: "TRAVESSEIRO HIGH CONFORT 28CM 70X50 BRANCO", price: 70.00 },
   { name: "TRAVESSEIRO PERCAL 200 FIOS 25CM 70X50 BRANCO", price: 80.00 },
   { name: "UNIBOX ALOE VERA 45CM CASAL PRETO", price: 1250.00 },
