@@ -371,14 +371,15 @@ export default function App() {
     let hasBaseDiscount = false;
     let hasPillowDiscount = false;
 
-    // 1. Identify Inventory of Mattresses (Colchão)
+    const specificPillowName = "TRAVESSEIRO FLOCOS CONFORTO 20CM 60X40 BRANCO";
+
+    // 1. Check if there is ANY product other than the specific pillow
+    const hasAnyOtherProduct = products.some(p => p.name !== specificPillowName);
+
+    // 2. Identify Inventory of Mattresses (Colchão) for Base Bundle Logic
     let casalMattressCount = 0;
     let queenMattressCount = 0;
     let superKingMattressCount = 0;
-
-    // Check if there is ANY product other than the specific pillow
-    const specificPillowName = "TRAVESSEIRO FLOCOS CONFORTO 20CM 60X40 BRANCO";
-    const hasAnyOtherProduct = products.some(p => p.name !== specificPillowName);
 
     products.forEach(p => {
         const name = p.name.toUpperCase();
@@ -389,19 +390,20 @@ export default function App() {
         }
     });
 
-    // 2. Iterate products to apply specific rules
+    // 3. Iterate products to apply specific rules
     products.forEach(p => {
         const name = p.name.toUpperCase();
         
         // RULE: Pillow "FLOCOS CONFORTO" is discounted (free) if there is ANY other product in the cart
         if (name === specificPillowName) {
              if (hasAnyOtherProduct) {
+                // Discount the full price of the pillow(s)
                 totalDiscount += (p.price * p.quantity);
                 hasPillowDiscount = true;
              }
         }
 
-        // RULE: Base Discounts based on Mattresses
+        // RULE: Base Discounts based on Mattresses (Bundle Logic)
         if (name.startsWith("BASE")) {
             let targetPrice = 0;
             let applied = false;
@@ -413,7 +415,7 @@ export default function App() {
                     const discountPerItem = Math.max(0, p.price - targetPrice);
                     totalDiscount += (discountPerItem * quantityToDiscount);
                     casalMattressCount -= quantityToDiscount;
-                    applied = true;
+                    if (discountPerItem > 0) applied = true;
                 }
             }
             else if (name.includes("QUEEN") && queenMattressCount > 0) {
@@ -423,7 +425,7 @@ export default function App() {
                     const discountPerItem = Math.max(0, p.price - targetPrice);
                     totalDiscount += (discountPerItem * quantityToDiscount);
                     queenMattressCount -= quantityToDiscount;
-                    applied = true;
+                    if (discountPerItem > 0) applied = true;
                 }
             }
             else if (name.includes("SUPER KING") && superKingMattressCount > 0) {
@@ -433,7 +435,7 @@ export default function App() {
                     const discountPerItem = Math.max(0, p.price - targetPrice);
                     totalDiscount += (discountPerItem * quantityToDiscount);
                     superKingMattressCount -= quantityToDiscount;
-                    applied = true;
+                    if (discountPerItem > 0) applied = true;
                 }
             }
 
@@ -443,6 +445,7 @@ export default function App() {
         }
     });
 
+    // Logic for Label
     let label = "";
     if (hasBaseDiscount && hasPillowDiscount) {
         label = "Desconto Combo + Travesseiro Brinde";
@@ -451,7 +454,7 @@ export default function App() {
     } else if (hasPillowDiscount) {
         label = "Desconto (Travesseiro Brinde)";
     } else {
-        // Fallback or legacy
+        // Fallback
         label = "Desconto Promocional";
     }
 

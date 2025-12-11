@@ -1,4 +1,5 @@
 
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { ReceiptData } from "../types";
 
@@ -113,8 +114,8 @@ export const parseReceiptFromText = async (text: string, catalogNames: string[] 
     4. Identifique os produtos mencionados que correspondam à lista de catálogos fornecida abaixo.
     
     REGRAS IMPORTANTES PARA PRODUTOS:
-    - Extraia a QUANTIDADE de cada item mencionado (ex: "2 camas" = quantidade 2). Se não especificar, assuma 1.
-    - Se o texto mencionar "TRAVESSEIRO DE BRINDE", "GANHOU TRAVESSEIRO" ou qualquer menção a travesseiro grátis, você DEVE mapear para o produto: "TRAVESSEIRO FLOCOS CONFORTO 20CM 60X40 BRANCO".
+    - Analise com MUITA atenção a QUANTIDADE de cada item mencionado (ex: "2 camas" = quantidade 2, "3x travesseiros" = quantidade 3). Se não especificar, assuma 1.
+    - Se o texto mencionar "TRAVESSEIRO DE BRINDE", "GANHOU TRAVESSEIRO", "TRAVESSEIRO GRÁTIS" ou qualquer menção a brinde de travesseiro, você DEVE mapear automaticamente para o produto: "TRAVESSEIRO FLOCOS CONFORTO 20CM 60X40 BRANCO".
     - Procure corresponder o texto do usuário com o NOME EXATO DA LISTA abaixo.
     
     LISTA DE PRODUTOS DO SISTEMA:
