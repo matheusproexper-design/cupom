@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect, useRef } from 'react';
 import { INITIAL_DATA, ReceiptData, PRODUCTS_LIST, PRODUCT_CATALOG, Product } from './types';
 import { generateReceiptPDF, getReceiptBlob } from './services/pdfService';
@@ -91,10 +89,25 @@ export default function App() {
 
   // Search state
   const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   // State for discount input as string
   const [discountInput, setDiscountInput] = useState("");
+
+  // Debounce effect for search term
+  useEffect(() => {
+    if (!searchTerm) {
+      setDebouncedSearchTerm("");
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
   // Save to localStorage whenever data changes
   useEffect(() => {
@@ -140,14 +153,15 @@ export default function App() {
     setSalespeople(salespeople.filter(s => s !== name));
   };
 
-  // Filter products using Fuse.js fuzzy search
-  const filteredProducts = searchTerm
-    ? fuse.search(searchTerm).map(result => result.item)
+  // Filter products using Fuse.js fuzzy search based on debounced term
+  const filteredProducts = debouncedSearchTerm
+    ? fuse.search(debouncedSearchTerm).map(result => result.item)
     : PRODUCTS_LIST;
 
   const handleSearchSelect = (name: string) => {
     setSelectedProduct(name);
     setSearchTerm(name);
+    setDebouncedSearchTerm(name); // Update debounced term immediately on selection
     setIsSearchOpen(false);
     
     // Auto-fill price
@@ -186,6 +200,7 @@ export default function App() {
     // Reset inputs
     setSelectedProduct("");
     setSearchTerm("");
+    setDebouncedSearchTerm("");
     setSelectedPrice("");
     setSelectedQuantity("1");
   };
@@ -773,7 +788,7 @@ export default function App() {
                             autoComplete="off"
                         />
                         
-                        {/* Dropdown Results */}
+                        {/* Dropdown Results - Filtered by debounced term */}
                         {isSearchOpen && (
                             <div className="absolute z-20 w-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl max-h-60 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent">
                                 {filteredProducts.length > 0 ? (
