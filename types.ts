@@ -99,6 +99,7 @@ export const PRODUCT_CATALOG: CatalogItem[] = [
   { name: "BASE BOX SUEDE 40CM SOLTEIRO PRETO", price: 450.00 },
   { name: "BASE BOX SUEDE 40CM SUPER KING CINZA", price: 750.00 },
   { name: "BASE BOX SUEDE 40CM SUPER KING PRETO", price: 750.00 },
+  { name: "BASE BOX SOMMIER 39CM QUEEN CORINO BEGE", price: 750.00 },
   { name: "BASE BOX SUEDE 42CM SUPER KING BEGE", price: 750.00 },
   { name: "BASE COLCHOBOX 32CM QUEEN BEGE", price: 650.00 },
   { name: "BASE COLCHOBOX 38CM CASAL BEGE", price: 550.00 },
