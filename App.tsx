@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { INITIAL_DATA, ReceiptData, PRODUCTS_LIST, PRODUCT_CATALOG, Product } from './types';
 import { generateReceiptPDF, getReceiptBlob } from './services/pdfService';
@@ -63,7 +64,7 @@ export default function App() {
     return INITIAL_DATA;
   });
 
-  // Salespeople Team State
+  // Salespeople Team State - Updated with new requested names
   const [salespeople, setSalespeople] = useState<string[]>(() => {
     try {
       const savedTeam = localStorage.getItem(TEAM_STORAGE_KEY);
@@ -71,7 +72,7 @@ export default function App() {
         return JSON.parse(savedTeam);
       }
     } catch (error) {}
-    return ['ROBSON', 'SARA']; // Defaults
+    return ['ROBSON', 'SARA', 'MATHEUS', 'GABRIEL', 'JEFFERSON', 'ITALO', 'MANOELA', 'ANA', 'DEBORA'];
   });
 
   const [newSalespersonName, setNewSalespersonName] = useState("");
@@ -306,14 +307,10 @@ export default function App() {
       // Tenta extrair a mensagem JSON se existir (comum em erros do Google)
       try {
         const rawMsg = errorMsg;
-        // Search for JSON structure like details: {...} or just {...}
-        // Example: Detalhes: {"error": {"code":403 ...}}
         const jsonMatch = rawMsg.match(/\{.*\}/);
         
         if (jsonMatch) {
             const parsedError = JSON.parse(jsonMatch[0]);
-            
-            // Check for structure returned by Google
             const errObj = parsedError.error || parsedError;
             
             if (errObj) {
@@ -328,9 +325,8 @@ export default function App() {
                 }
             }
         }
-      } catch (e) { /* falha no parse, usa a mensagem original */ }
+      } catch (e) { /* falha no parse */ }
 
-      // Fallback: Detecta erro de chave vazada por texto simples se o JSON parse falhar
       if (!detailedMsg && (errorMsg.includes("leaked") || errorMsg.includes("API key"))) {
           errorTitle = "CHAVE API BLOQUEADA (VAZAMENTO)";
           errorMsg = "O Google bloqueou sua API KEY por segurança (detectada como pública).";
@@ -391,6 +387,13 @@ export default function App() {
     // 1. Check if there is ANY product other than the specific pillow
     const hasAnyOtherProduct = products.some(p => p.name !== specificPillowName);
 
+    // --- NEW RULE: Check for any "BASE BAÚ" in the cart ---
+    // If a Base Baú is present, the combo discount (Base + Mattress) is disabled.
+    const hasBaseBau = products.some(p => {
+        const n = p.name.toUpperCase();
+        return n.startsWith("BASE") && (n.includes("BAÚ") || n.includes("BAU"));
+    });
+
     // 2. Identify Inventory of Mattresses (Colchão) for Base Bundle Logic
     let casalMattressCount = 0;
     let queenMattressCount = 0;
@@ -412,14 +415,14 @@ export default function App() {
         // RULE: Pillow "FLOCOS CONFORTO" is discounted (free) if there is ANY other product in the cart
         if (name === specificPillowName) {
              if (hasAnyOtherProduct) {
-                // Discount the full price of the pillow(s)
                 totalDiscount += (p.price * p.quantity);
                 hasPillowDiscount = true;
              }
         }
 
         // RULE: Base Discounts based on Mattresses (Bundle Logic)
-        if (name.startsWith("BASE")) {
+        // MODIFIED: Only apply if NO "BASE BAÚ" is in the cart
+        if (name.startsWith("BASE") && !hasBaseBau) {
             let targetPrice = 0;
             let applied = false;
 
@@ -469,7 +472,6 @@ export default function App() {
     } else if (hasPillowDiscount) {
         label = "Desconto (Travesseiro Brinde)";
     } else {
-        // Fallback
         label = "Desconto Promocional";
     }
 
@@ -497,7 +499,7 @@ export default function App() {
     return {
         ...data,
         bundleDiscount: bundleDiscount,
-        bundleLabel: bundleDiscountLabel, // Pass the computed label
+        bundleLabel: bundleDiscountLabel, 
         discountType: data.discountType,
         discountValue: data.discountValue
     } as ReceiptData;
@@ -576,7 +578,6 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100 font-sans selection:bg-blue-500 selection:text-white pb-20">
       
-      {/* Navbar */}
       <header className="border-b border-gray-800 bg-[#0047AB] shadow-lg sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
           <div className="flex flex-col">
@@ -592,7 +593,7 @@ export default function App() {
                 <p className="text-xs text-blue-200 font-medium">Ecosistema</p>
                 <p className="text-xs text-white font-bold">Vendas & Gestão</p>
              </div>
-             <span className="text-[10px] font-medium px-2 py-1 bg-white/10 rounded-full text-white border border-white/20">v1.6.0</span>
+             <span className="text-[10px] font-medium px-2 py-1 bg-white/10 rounded-full text-white border border-white/20">v1.6.1</span>
           </div>
         </div>
       </header>
@@ -771,7 +772,6 @@ export default function App() {
                 <div className="space-y-4">
                     <div className="bg-gray-800/50 p-4 rounded-xl border border-gray-700/50 flex flex-col gap-3">
                     
-                    {/* Searchable Input */}
                     <div className="relative">
                         <Input
                             label="Buscar Produto..."
@@ -779,16 +779,14 @@ export default function App() {
                             onChange={(e) => {
                                 setSearchTerm(e.target.value);
                                 setIsSearchOpen(true);
-                                setSelectedProduct(""); // Clear exact selection while typing
+                                setSelectedProduct("");
                             }}
                             onFocus={() => setIsSearchOpen(true)}
-                            // Delay blur to allow click on dropdown items
                             onBlur={() => setTimeout(() => setIsSearchOpen(false), 200)}
                             icon={<Search className="w-4 h-4" />}
                             autoComplete="off"
                         />
                         
-                        {/* Dropdown Results - Filtered by debounced term */}
                         {isSearchOpen && (
                             <div className="absolute z-20 w-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl max-h-60 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent">
                                 {filteredProducts.length > 0 ? (
@@ -810,7 +808,6 @@ export default function App() {
                         )}
                     </div>
 
-                    {/* Price, Qty Row */}
                     <div className="grid grid-cols-2 gap-2">
                         <Input 
                             label="Qtd" 
@@ -840,7 +837,6 @@ export default function App() {
                     </button>
                     </div>
 
-                    {/* Products List */}
                     {data.products.length > 0 && (
                     <div className="space-y-2 mt-4">
                         {data.products.map((p, idx) => (
@@ -865,7 +861,6 @@ export default function App() {
                                 </button>
                             </div>
                             
-                            {/* Warranty Inputs inside list */}
                             <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-gray-700/50">
                                 <div className="relative">
                                     <input 
@@ -892,10 +887,8 @@ export default function App() {
                         </div>
                         ))}
                         
-                        {/* Discount & Payment Section */}
                         <div className="mt-4 pt-4 border-t border-gray-700">
                             
-                            {/* Payment Method - Moved Here */}
                             <div className="mb-4">
                                 <div className="flex items-center justify-between mb-2">
                                     <span className="text-xs text-gray-400 uppercase font-bold tracking-wider">Forma de Pagamento</span>
@@ -910,7 +903,6 @@ export default function App() {
                                 />
                             </div>
 
-                            {/* Discount Section */}
                             <div className="flex items-center justify-between mb-2">
                             <span className="text-xs text-gray-400 uppercase font-bold tracking-wider">Desconto do Vendedor</span>
                             </div>
@@ -945,7 +937,6 @@ export default function App() {
                                     <span>{subtotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                                 </div>
 
-                                {/* Automatic Bundle Discount Display */}
                                 {bundleDiscount > 0 && (
                                     <div className="flex justify-between items-center text-blue-400">
                                         <span className="flex items-center gap-1"><Tag className="w-3 h-3"/> {bundleDiscountLabel}:</span>
@@ -973,7 +964,6 @@ export default function App() {
                 </div>
                 </div>
 
-                {/* Client Data Section */}
                 <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-300">
                 <div className="flex items-center justify-between mb-6">
                     <h2 className="text-lg font-semibold text-white flex items-center gap-2">
@@ -1069,7 +1059,6 @@ export default function App() {
                     icon={<Building2 className="w-4 h-4" />}
                     />
 
-                    {/* Google Maps Actions */}
                     <div className="bg-gray-800/30 border border-gray-700/50 rounded-lg p-3 flex items-center justify-between">
                         <div className="flex items-center gap-2 text-gray-400 text-xs uppercase font-bold tracking-wider">
                            <MapPin className="w-4 h-4" />
@@ -1124,10 +1113,8 @@ export default function App() {
             )}
           </div>
 
-          {/* Right Column: Preview & Actions */}
           <div className="lg:col-span-7 space-y-6">
             
-            {/* Action Bar */}
             <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 shadow-xl flex flex-wrap gap-3 items-center justify-between">
               <div className="flex items-center gap-2">
                  <div className="h-8 w-8 rounded-full bg-gray-800 flex items-center justify-center">
@@ -1167,16 +1154,13 @@ export default function App() {
               </div>
             </div>
 
-            {/* Live Preview - Paper Style */}
             <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 shadow-2xl relative overflow-hidden">
                 <div className="absolute top-0 right-0 p-4 z-10">
                     <span className="text-[10px] font-bold tracking-widest text-gray-600 uppercase border border-gray-700 bg-white/80 px-2 py-1 rounded backdrop-blur">Preview</span>
                 </div>
                 
-                {/* Simulated Paper - MATCHING PDF EXACTLY */}
                 <div className="bg-white text-gray-900 p-8 rounded-lg shadow-sm min-h-[800px] max-w-lg mx-auto transform transition-all flex flex-col">
                     
-                    {/* 1. Header (Blue) */}
                     <div className="bg-[#1e40af] text-white p-6 -mx-8 -mt-8 mb-6 flex justify-between items-start">
                        <div className="flex flex-col justify-center h-full">
                            <h1 className="font-serif font-bold text-3xl">BelConfort</h1>
@@ -1188,7 +1172,6 @@ export default function App() {
                            <p>belconfortcamasemoveis@gmail.com</p>
                            <p>(91) 99381-2592</p>
                            <div className="mt-2 w-8 h-8 bg-white/20 border border-white/40 flex items-center justify-center">
-                               {/* QR Placeholder */}
                                <div className="w-6 h-6 bg-white/90 grid grid-cols-3 gap-0.5 p-0.5">
                                    <div className="bg-blue-900 col-span-2 row-span-2"></div>
                                    <div className="bg-blue-900"></div>
@@ -1198,7 +1181,6 @@ export default function App() {
                        </div>
                     </div>
 
-                    {/* 2. Title */}
                     <div className="text-center mb-6">
                         <h2 className="text-lg font-bold text-gray-900 uppercase">COMPROVANTE DE COMPRA</h2>
                         <p className="text-[10px] text-gray-500">
@@ -1206,15 +1188,12 @@ export default function App() {
                         </p>
                     </div>
 
-                    {/* 3. Client Data Grid (Boxed) */}
                     <div className="border border-gray-300 mb-6 text-sm">
-                        {/* Row 1 */}
                         <div className="grid grid-cols-[20%_55%_25%] border-b border-gray-300">
                             <PreviewCell label="DATA DO PEDIDO" value={data.date ? new Date(data.date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'} className="border-r border-gray-300" />
                             <PreviewCell label="CLIENTE" value={data.name} className="border-r border-gray-300" />
                             <PreviewCell label="CPF/CNPJ" value={data.cpf} />
                         </div>
-                        {/* Row 2 - Split Address Grid */}
                         <div className="grid grid-cols-[40%_10%_15%_20%_15%] border-b border-gray-300">
                             <PreviewCell label="RUA" value={data.street} className="border-r border-gray-300" />
                             <PreviewCell label="Nº" value={data.number} className="border-r border-gray-300" />
@@ -1222,14 +1201,12 @@ export default function App() {
                             <PreviewCell label="BAIRRO" value={data.neighborhood} className="border-r border-gray-300" />
                             <PreviewCell label="CIDADE" value={data.city} />
                         </div>
-                        {/* Row 3 - Email, Contacts - REMOVED PAYMENT FROM HERE */}
                         <div className="grid grid-cols-[55%_45%]">
                              <PreviewCell label="E-MAIL" value={data.email} className="border-r border-gray-300" />
                              <PreviewCell label="CONTATOS" value={[data.contact1, data.contact2].filter(Boolean).join(' / ')} />
                         </div>
                     </div>
 
-                    {/* 4. Products Table */}
                     <div className="mb-2">
                          <div className="grid grid-cols-[40px_1fr_30px_60px_60px] bg-gray-50 border-y border-gray-300 text-[9px] font-bold text-blue-900 py-1 px-1 gap-2">
                              <div>CÓD</div>
@@ -1265,9 +1242,7 @@ export default function App() {
                          </div>
                     </div>
 
-                    {/* 5. Summary Section */}
                     <div className="flex items-start pt-5 mb-4 justify-between">
-                        {/* Sale Code & Payment & Salesperson - Boxed/Grid Style */}
                         <div className="border border-gray-300 rounded w-[240px]">
                             <div className="flex justify-between items-center px-3 py-2 border-b border-gray-300 bg-gray-50/50">
                                 <span className="text-[10px] font-bold text-gray-400 uppercase">CÓDIGO DA VENDA</span>
@@ -1283,7 +1258,6 @@ export default function App() {
                             </div>
                         </div>
 
-                        {/* Totals */}
                         <div className="w-64 text-xs pt-2">
                              <div className="flex justify-between mb-1 text-gray-600">
                                  <span>Subtotal:</span>
@@ -1308,7 +1282,6 @@ export default function App() {
                         </div>
                     </div>
 
-                    {/* 6. Observation */}
                     <div className="bg-[#fefce8] border border-[#fef9c3] rounded-lg p-3 text-center mb-2">
                         <p className="text-[10px] font-bold text-[#a16207] mb-1">OBSERVAÇÃO</p>
                         <p className="text-[10px] italic text-gray-700 leading-tight">
@@ -1316,7 +1289,6 @@ export default function App() {
                         </p>
                     </div>
 
-                    {/* 7. Return Policy (CDC) */}
                     <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-left mb-auto mt-2">
                         <p className="text-[10px] font-bold text-slate-800 mb-2 text-center uppercase border-b border-slate-200 pb-1">Política de Trocas e Devoluções</p>
                         
@@ -1348,34 +1320,28 @@ export default function App() {
                         </div>
                     </div>
 
-                    {/* 8. Footer (Stamp & Signature) */}
                     <div className="mt-12 pt-8 pb-4 relative">
-                        {/* Signature Line */}
                         <div className="border-t border-dashed border-gray-400 w-1/2 mx-auto mb-1"></div>
                         <p className="text-[10px] text-gray-500 text-center">Assinatura do Responsável</p>
                         <p className="text-[8px] text-gray-300 text-center mt-4">Documento gerado pelo Ecosistema Belconfort</p>
 
-                        {/* Simulated Signature Layer (SVG) */}
                         <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-2 w-40 h-20 pointer-events-none opacity-50 text-blue-900">
                             <svg viewBox="0 0 100 50" width="100%" height="100%">
                                 <path 
                                     d="M35 36 C 37 21, 43 21, 43 36 C 43 24, 49 24, 49 36 C 51 33, 53 38, 54 35 L 56 28 L 56 36 C 57 26, 61 26, 61 36 C 61 31, 64 31, 64 36 C 67 34, 70 38, 73 34 M 30 41 C 45 44, 65 39, 80 42" 
                                     fill="none" 
                                     stroke="currentColor" 
-                                    strokeWidth="0.15" // Very thin
+                                    strokeWidth="0.15"
                                 />
                             </svg>
                         </div>
 
-                        {/* Simulated Stamp Layer */}
                         <div className="absolute -top-6 left-1/2 -translate-x-1/2 w-48 h-20 pointer-events-none flex flex-col items-center justify-center">
-                            {/* Brackets */}
                             <div className="absolute top-0 left-0 w-3 h-3 border-l-2 border-t-2 border-blue-900"></div>
                             <div className="absolute top-0 right-0 w-3 h-3 border-r-2 border-t-2 border-blue-900"></div>
                             <div className="absolute bottom-0 left-0 w-3 h-3 border-l-2 border-b-2 border-blue-900"></div>
                             <div className="absolute bottom-0 right-0 w-3 h-3 border-r-2 border-b-2 border-blue-900"></div>
                             
-                            {/* Content */}
                             <div className="text-blue-900 text-center z-10">
                                 <p className="font-bold text-sm leading-tight">60.190.028/0001-60</p>
                                 <p className="text-[10px] leading-tight mt-1">BELCONFORT CAMAS E MÓVEIS</p>
