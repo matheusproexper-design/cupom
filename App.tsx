@@ -387,7 +387,7 @@ export default function App() {
     // 1. Check if there is ANY product other than the specific pillow
     const hasAnyOtherProduct = products.some(p => p.name !== specificPillowName);
 
-    // --- NEW RULE: Check for any "BASE BAÚ" in the cart ---
+    // --- RULE: Check for any "BASE BAÚ" in the cart ---
     // If a Base Baú is present, the combo discount (Base + Mattress) is disabled.
     const hasBaseBau = products.some(p => {
         const n = p.name.toUpperCase();
@@ -395,6 +395,7 @@ export default function App() {
     });
 
     // 2. Identify Inventory of Mattresses (Colchão) for Base Bundle Logic
+    let solteiroMattressCount = 0;
     let casalMattressCount = 0;
     let queenMattressCount = 0;
     let superKingMattressCount = 0;
@@ -402,9 +403,10 @@ export default function App() {
     products.forEach(p => {
         const name = p.name.toUpperCase();
         if (name.includes("COLCHÃO") || name.includes("COLCHAO")) {
-            if (name.includes("CASAL")) casalMattressCount += p.quantity;
+            if (name.includes("SUPER KING")) superKingMattressCount += p.quantity;
             else if (name.includes("QUEEN")) queenMattressCount += p.quantity;
-            else if (name.includes("SUPER KING")) superKingMattressCount += p.quantity;
+            else if (name.includes("CASAL")) casalMattressCount += p.quantity;
+            else if (name.includes("SOLTEIRO") || name.includes("SOLTEIRÃO") || name.includes("SOLTEIRAO")) solteiroMattressCount += p.quantity;
         }
     });
 
@@ -426,13 +428,13 @@ export default function App() {
             let targetPrice = 0;
             let applied = false;
 
-            if (name.includes("CASAL") && casalMattressCount > 0) {
-                targetPrice = 250.00;
-                const quantityToDiscount = Math.min(p.quantity, casalMattressCount);
+            if (name.includes("SUPER KING") && superKingMattressCount > 0) {
+                targetPrice = 350.00;
+                const quantityToDiscount = Math.min(p.quantity, superKingMattressCount);
                 if (quantityToDiscount > 0) {
                     const discountPerItem = Math.max(0, p.price - targetPrice);
                     totalDiscount += (discountPerItem * quantityToDiscount);
-                    casalMattressCount -= quantityToDiscount;
+                    superKingMattressCount -= quantityToDiscount;
                     if (discountPerItem > 0) applied = true;
                 }
             }
@@ -446,13 +448,23 @@ export default function App() {
                     if (discountPerItem > 0) applied = true;
                 }
             }
-            else if (name.includes("SUPER KING") && superKingMattressCount > 0) {
-                targetPrice = 350.00;
-                const quantityToDiscount = Math.min(p.quantity, superKingMattressCount);
+            else if (name.includes("CASAL") && casalMattressCount > 0) {
+                targetPrice = 250.00;
+                const quantityToDiscount = Math.min(p.quantity, casalMattressCount);
                 if (quantityToDiscount > 0) {
                     const discountPerItem = Math.max(0, p.price - targetPrice);
                     totalDiscount += (discountPerItem * quantityToDiscount);
-                    superKingMattressCount -= quantityToDiscount;
+                    casalMattressCount -= quantityToDiscount;
+                    if (discountPerItem > 0) applied = true;
+                }
+            }
+            else if ((name.includes("SOLTEIRO") || name.includes("SOLTEIRAO") || name.includes("SOLTEIRÃO")) && solteiroMattressCount > 0) {
+                targetPrice = 200.00;
+                const quantityToDiscount = Math.min(p.quantity, solteiroMattressCount);
+                if (quantityToDiscount > 0) {
+                    const discountPerItem = Math.max(0, p.price - targetPrice);
+                    totalDiscount += (discountPerItem * quantityToDiscount);
+                    solteiroMattressCount -= quantityToDiscount;
                     if (discountPerItem > 0) applied = true;
                 }
             }

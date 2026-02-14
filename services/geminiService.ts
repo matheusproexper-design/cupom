@@ -1,42 +1,15 @@
-
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { ReceiptData } from "../types";
 
-// Helper to safely get the API Key from various possible sources
-const getApiKey = (): string => {
-  // 1. Try Vite Environment Variable (Standard for Vercel + Vite)
-  try {
-    // @ts-ignore
-    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_KEY) {
-      // @ts-ignore
-      return import.meta.env.VITE_API_KEY;
-    }
-  } catch (e) {}
-
-  // 2. Try Process Env (Fallback / Node shim)
-  if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
-    return process.env.API_KEY;
-  }
-
-  // 3. Check for manual global override
-  // @ts-ignore
-  if (typeof window !== 'undefined' && window.process && window.process.env && window.process.env.API_KEY) {
-    // @ts-ignore
-    return window.process.env.API_KEY;
-  }
-
-  return "";
-};
-
+/**
+ * Generates a friendly confirmation message for the client using Gemini.
+ * Follows the @google/genai coding guidelines.
+ */
 export const generateClientMessage = async (data: ReceiptData): Promise<string> => {
-  const apiKey = getApiKey();
-  if (!apiKey) {
-    return "ERRO DE CONFIGURAÇÃO: Chave API não encontrada. Verifique as Variáveis de Ambiente no Vercel (VITE_API_KEY).";
-  }
-
-  const ai = new GoogleGenAI({ apiKey });
-  const model = "gemini-2.5-flash";
+  // Initialize with process.env.API_KEY directly as per guidelines
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+  // Using 'gemini-3-flash-preview' for basic text tasks
+  const model = 'gemini-3-flash-preview';
   
   // Calculations for prompt
   const subtotal = data.products.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0);
@@ -87,6 +60,7 @@ export const generateClientMessage = async (data: ReceiptData): Promise<string> 
       contents: prompt,
     });
 
+    // Directly access the text property as per guidelines
     return response.text || "Não foi possível gerar a mensagem.";
   } catch (error: any) {
     console.error("Error generating message:", error);
@@ -94,14 +68,15 @@ export const generateClientMessage = async (data: ReceiptData): Promise<string> 
   }
 };
 
+/**
+ * Parses receipt text into structured JSON data using Gemini.
+ * Follows the @google/genai coding guidelines.
+ */
 export const parseReceiptFromText = async (text: string, catalogNames: string[] = []): Promise<any> => {
-  const apiKey = getApiKey();
-  if (!apiKey) {
-    throw new Error("CHAVE API NÃO ENCONTRADA! Adicione VITE_API_KEY nas variáveis de ambiente do Vercel.");
-  }
-
-  const ai = new GoogleGenAI({ apiKey });
-  const model = "gemini-2.5-flash";
+  // Initialize with process.env.API_KEY directly
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+  // Using 'gemini-3-flash-preview' for structured extraction
+  const model = 'gemini-3-flash-preview';
 
   const catalogString = catalogNames.join(", ");
 
@@ -170,6 +145,7 @@ export const parseReceiptFromText = async (text: string, catalogNames: string[] 
       }
     });
 
+    // Access text property directly
     const jsonText = response.text;
     if (!jsonText) throw new Error("A IA retornou uma resposta vazia.");
 
