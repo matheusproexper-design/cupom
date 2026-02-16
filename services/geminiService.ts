@@ -6,9 +6,8 @@ import { ReceiptData } from "../types";
  * Generates a friendly confirmation message for the client using Gemini.
  */
 export const generateClientMessage = async (data: ReceiptData): Promise<string> => {
-  // Inicializa o cliente usando a variável de ambiente process.env.API_KEY
+  // Use the pre-configured process.env.API_KEY directly as per coding guidelines
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-  const model = 'gemini-3-flash-preview';
   
   const subtotal = data.products.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0);
   let discountAmount = 0;
@@ -52,15 +51,16 @@ export const generateClientMessage = async (data: ReceiptData): Promise<string> 
   `;
 
   try {
+    // Basic text task uses gemini-3-flash-preview
     const response = await ai.models.generateContent({
-      model: model,
+      model: 'gemini-3-flash-preview',
       contents: prompt,
     });
 
     return response.text || "Não foi possível gerar a mensagem.";
   } catch (error: any) {
     console.error("Error generating message:", error);
-    return `Erro na IA: ${error.message || 'Desconhecido'}`;
+    throw error;
   }
 };
 
@@ -68,9 +68,8 @@ export const generateClientMessage = async (data: ReceiptData): Promise<string> 
  * Parses receipt text into structured JSON data using Gemini.
  */
 export const parseReceiptFromText = async (text: string, catalogNames: string[] = []): Promise<any> => {
-  // Inicializa o cliente usando a variável de ambiente process.env.API_KEY
+  // Use the pre-configured process.env.API_KEY directly as per coding guidelines
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-  const model = 'gemini-3-flash-preview';
 
   const catalogString = catalogNames.join(", ");
 
@@ -98,8 +97,9 @@ export const parseReceiptFromText = async (text: string, catalogNames: string[] 
   `;
 
   try {
+    // Parsing unstructured text into structured JSON is a reasoning task; gemini-3-pro-preview is recommended for higher accuracy
     const response = await ai.models.generateContent({
-      model: model,
+      model: 'gemini-3-pro-preview',
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -142,10 +142,9 @@ export const parseReceiptFromText = async (text: string, catalogNames: string[] 
     const jsonText = response.text;
     if (!jsonText) throw new Error("A IA retornou uma resposta vazia.");
 
-    const parsedData = JSON.parse(jsonText);
-    return parsedData;
+    return JSON.parse(jsonText);
   } catch (error: any) {
     console.error("Error parsing receipt text:", error);
-    throw new Error(error.message || "Falha na comunicação com a IA");
+    throw error;
   }
 };
