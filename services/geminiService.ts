@@ -1,17 +1,15 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { ReceiptData } from "../types";
 
 /**
  * Generates a friendly confirmation message for the client using Gemini.
- * Follows the @google/genai coding guidelines.
  */
 export const generateClientMessage = async (data: ReceiptData): Promise<string> => {
-  // Initialize with process.env.API_KEY directly as per guidelines
+  // Inicializa o cliente usando a variável de ambiente process.env.API_KEY
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-  // Using 'gemini-3-flash-preview' for basic text tasks
   const model = 'gemini-3-flash-preview';
   
-  // Calculations for prompt
   const subtotal = data.products.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0);
   let discountAmount = 0;
   if (data.discountType === 'fixed') {
@@ -21,7 +19,6 @@ export const generateClientMessage = async (data: ReceiptData): Promise<string> 
   }
   const finalTotal = Math.max(0, subtotal - discountAmount);
 
-  // Format product list for the prompt
   const productsListText = data.products.length > 0 
     ? data.products.map(p => `- ${p.quantity}x ${p.name} (${(p.price * p.quantity).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})`).join('\n')
     : "Não especificado";
@@ -60,7 +57,6 @@ export const generateClientMessage = async (data: ReceiptData): Promise<string> 
       contents: prompt,
     });
 
-    // Directly access the text property as per guidelines
     return response.text || "Não foi possível gerar a mensagem.";
   } catch (error: any) {
     console.error("Error generating message:", error);
@@ -70,12 +66,10 @@ export const generateClientMessage = async (data: ReceiptData): Promise<string> 
 
 /**
  * Parses receipt text into structured JSON data using Gemini.
- * Follows the @google/genai coding guidelines.
  */
 export const parseReceiptFromText = async (text: string, catalogNames: string[] = []): Promise<any> => {
-  // Initialize with process.env.API_KEY directly
+  // Inicializa o cliente usando a variável de ambiente process.env.API_KEY
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-  // Using 'gemini-3-flash-preview' for structured extraction
   const model = 'gemini-3-flash-preview';
 
   const catalogString = catalogNames.join(", ");
@@ -145,7 +139,6 @@ export const parseReceiptFromText = async (text: string, catalogNames: string[] 
       }
     });
 
-    // Access text property directly
     const jsonText = response.text;
     if (!jsonText) throw new Error("A IA retornou uma resposta vazia.");
 
@@ -153,7 +146,6 @@ export const parseReceiptFromText = async (text: string, catalogNames: string[] 
     return parsedData;
   } catch (error: any) {
     console.error("Error parsing receipt text:", error);
-    // Re-throw with clear message
     throw new Error(error.message || "Falha na comunicação com a IA");
   }
 };

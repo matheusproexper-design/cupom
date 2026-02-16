@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="pt-BR">
   <head>
@@ -8,7 +9,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
     
-    <!-- ERROR HANDLER: Mostra erros na tela se o app falhar ao carregar -->
+    <!-- ERROR HANDLER -->
     <script>
       window.onerror = function(msg, url, lineNo, columnNo, error) {
         const errorContainer = document.getElementById('error-container') || document.createElement('div');
@@ -41,34 +42,6 @@
           }
         }
       }
-    </script>
-    <script>
-      // --- CONFIGURAÇÃO DE AMBIENTE (API KEYS) ---
-      window.process = window.process || {};
-      window.process.env = window.process.env || {};
-      window.process.env.NODE_ENV = 'production';
-      
-      // Tenta pegar do ambiente (Vercel)
-      let envKey = "";
-      try {
-        // @ts-ignore
-        if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_KEY) {
-           envKey = import.meta.env.VITE_API_KEY;
-        }
-      } catch (e) {}
-
-      // ==================================================================================
-      // >>> ÁREA PARA COLAR A CHAVE API <<<
-      // ==================================================================================
-      // 1. Apague o texto dentro das aspas abaixo.
-      // 2. Cole sua chave do Google Gemini (começa com AIza...).
-      // ==================================================================================
-      
-      const MANUAL_KEY = ""; 
-      
-      // ==================================================================================
-
-      window.process.env.API_KEY = envKey || MANUAL_KEY;
     </script>
     <style>
       body {
