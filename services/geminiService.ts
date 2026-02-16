@@ -43,7 +43,7 @@ export const generateClientMessage = async (data: ReceiptData): Promise<string> 
       model: 'gemini-3-flash-preview',
       contents: prompt,
       config: {
-        systemInstruction: "Você é um assistente de elite da BelConfort. Seu tom é executivo, acolhedor e focado em eficiência. Evite redundâncias e saudações genéricas de IA."
+        systemInstruction: "Você é um assistente de elite da BelConfort. Seu tom é executivo, acolhedor e focado em eficiência."
       }
     });
 
@@ -78,10 +78,10 @@ export const parseReceiptFromText = async (text: string, catalogNames: string[] 
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
+      model: 'gemini-3-flash-preview',
       contents: prompt,
       config: {
-        systemInstruction: "Você é um extrator de dados JSON de alta performance. Sua prioridade é a integridade dos dados e a correspondência exata de nomes de produtos do catálogo.",
+        systemInstruction: "Você é um extrator de dados JSON de alta performance para a BelConfort. Sua prioridade é a integridade dos dados e a correspondência exata de nomes de produtos do catálogo.",
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
