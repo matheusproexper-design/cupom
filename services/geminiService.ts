@@ -22,39 +22,29 @@ export const generateClientMessage = async (data: ReceiptData): Promise<string> 
     ? data.products.map(p => `- ${p.quantity}x ${p.name} (${(p.price * p.quantity).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})`).join('\n')
     : "Não especificado";
   
-  const discountText = discountAmount > 0 
-    ? `Desconto: - ${discountAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}\n` 
-    : '';
-
   const totalText = finalTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
   const prompt = `
-    Você é um assistente de vendas da BelConfort (Loja de Camas e Móveis).
-    Escreva uma mensagem curta, amigável e profissional para o WhatsApp do cliente confirmando o pedido.
+    Você é o motor de inteligência da BelConfort. Gere uma resposta extremamente profissional e cordial.
     
-    Dados do cliente:
-    Nome: ${data.name}
-    CPF: ${data.cpf}
-    Data: ${data.date}
-    Endereço: ${data.street}, ${data.number}, ${data.neighborhood}, ${data.city} ${data.complement ? `(${data.complement})` : ''}
-    Forma de Pagamento: ${data.paymentMethod}
-    
-    Produtos:
+    DADOS DO PEDIDO:
+    Cliente: ${data.name}
+    Venda ID: ${data.saleCode}
+    Valor Final: ${totalText}
+    Lista de Itens:
     ${productsListText}
 
-    ${discountText}
-    Valor Total: ${totalText}
-    
-    A mensagem deve agradecer a preferência pela BelConfort.
-    Use emojis relacionados a conforto, móveis e casa. 
-    Seja objetivo e cordial.
+    MISSÃO:
+    Escreva uma mensagem curta para WhatsApp. Seja direto, use emojis de forma sofisticada e agradeça a confiança na BelConfort.
   `;
 
   try {
-    // Basic text task uses gemini-3-flash-preview
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: prompt,
+      config: {
+        systemInstruction: "Você é um assistente de elite da BelConfort. Seu tom é executivo, acolhedor e focado em eficiência. Evite redundâncias e saudações genéricas de IA."
+      }
     });
 
     return response.text || "Não foi possível gerar a mensagem.";
@@ -74,34 +64,24 @@ export const parseReceiptFromText = async (text: string, catalogNames: string[] 
   const catalogString = catalogNames.join(", ");
 
   const prompt = `
-    Analise o seguinte texto de um pedido/ficha de cliente.
+    Analise a ficha técnica/texto de venda abaixo e extraia cada bit de informação com precisão absoluta.
     
-    1. Extraia os dados pessoais do cliente.
-    2. Tente identificar um CÓDIGO DA VENDA, Número do Pedido ou ID (ex: #1234, 8402, PED-01).
-    3. Identifique o CPF ou CNPJ do cliente se houver.
-    4. Identifique os produtos mencionados que correspondam à lista de catálogos fornecida abaixo.
-    
-    REGRAS IMPORTANTES PARA PRODUTOS:
-    - Analise com MUITA atenção a QUANTIDADE de cada item mencionado (ex: "2 camas" = quantidade 2, "3x travesseiros" = quantidade 3). Se não especificar, assuma 1.
-    - Se o texto mencionar "TRAVESSEIRO DE BRINDE", "GANHOU TRAVESSEIRO", "TRAVESSEIRO GRÁTIS" ou qualquer menção a brinde de travesseiro, você DEVE mapear automaticamente para o produto: "TRAVESSEIRO FLOCOS CONFORTO 20CM 60X40 BRANCO".
-    - Procure corresponder o texto do usuário com o NOME EXATO DA LISTA abaixo.
-    
-    LISTA DE PRODUTOS DO SISTEMA:
-    [${catalogString}]
+    DIRETRIZES:
+    1. Localize Nome, CPF/CNPJ e Endereço Completo.
+    2. Mapeie cada produto para o nome correspondente no catálogo oficial: [${catalogString}]
+    3. REGRAS DE BRINDES: Se o cliente "ganhou" ou tem travesseiro como "cortesia", mapeie para: "TRAVESSEIRO FLOCOS CONFORTO 20CM 60X40 BRANCO".
+    4. DATA: Se não houver data, deixe vazio para preenchimento manual.
 
-    Retorne um JSON com os dados do cliente e um array de itens.
-    Cada item deve ter "name" (string exata da lista) e "quantity" (numero).
-
-    Texto para analise:
+    TEXTO DO CLIENTE:
     ${text}
   `;
 
   try {
-    // Parsing unstructured text into structured JSON is a reasoning task; gemini-3-pro-preview is recommended for higher accuracy
     const response = await ai.models.generateContent({
       model: 'gemini-3-pro-preview',
       contents: prompt,
       config: {
+        systemInstruction: "Você é um extrator de dados JSON de alta performance. Sua prioridade é a integridade dos dados e a correspondência exata de nomes de produtos do catálogo.",
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -140,7 +120,7 @@ export const parseReceiptFromText = async (text: string, catalogNames: string[] 
     });
 
     const jsonText = response.text;
-    if (!jsonText) throw new Error("A IA retornou uma resposta vazia.");
+    if (!jsonText) throw new Error("Resposta vazia.");
 
     return JSON.parse(jsonText);
   } catch (error: any) {
