@@ -802,15 +802,23 @@ export default function App() {
                         {isSearchOpen && (
                             <div className="absolute z-20 w-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl max-h-60 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent">
                                 {filteredProducts.length > 0 ? (
-                                    filteredProducts.map((product) => (
-                                        <button
-                                            key={product}
-                                            className="w-full text-left px-4 py-3 text-sm text-gray-200 hover:bg-gray-700 transition-colors uppercase border-b border-gray-700/50 last:border-0"
-                                            onClick={() => handleSearchSelect(product)}
-                                        >
-                                            {product}
-                                        </button>
-                                    ))
+                                    filteredProducts.map((productName) => {
+                                        const product = PRODUCT_CATALOG.find(p => p.name === productName);
+                                        return (
+                                            <button
+                                                key={productName}
+                                                className="w-full text-left px-4 py-3 text-sm text-gray-200 hover:bg-gray-700 transition-colors uppercase border-b border-gray-700/50 last:border-0 flex justify-between items-center"
+                                                onClick={() => handleSearchSelect(productName)}
+                                            >
+                                                <span className="truncate mr-2">{productName}</span>
+                                                {product && (
+                                                    <span className="text-green-400 font-bold whitespace-nowrap">
+                                                        {product.price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                                    </span>
+                                                )}
+                                            </button>
+                                        );
+                                    })
                                 ) : (
                                     <div className="px-4 py-3 text-sm text-gray-500 text-center">
                                         Nenhum produto encontrado

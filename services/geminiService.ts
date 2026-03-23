@@ -6,8 +6,8 @@ import { ReceiptData } from "../types";
  * Generates a friendly confirmation message for the client using Gemini.
  */
 export const generateClientMessage = async (data: ReceiptData): Promise<string> => {
-  // Use the pre-configured process.env.API_KEY directly as per coding guidelines
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+  // Use the pre-configured process.env.GEMINI_API_KEY directly as per coding guidelines
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY as string });
   
   const subtotal = data.products.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0);
   let discountAmount = 0;
@@ -58,8 +58,8 @@ export const generateClientMessage = async (data: ReceiptData): Promise<string> 
  * Parses receipt text into structured JSON data using Gemini.
  */
 export const parseReceiptFromText = async (text: string, catalogNames: string[] = []): Promise<any> => {
-  // Use the pre-configured process.env.API_KEY directly as per coding guidelines
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+  // Use the pre-configured process.env.GEMINI_API_KEY directly as per coding guidelines
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY as string });
 
   const catalogString = catalogNames.join(", ");
 
