@@ -268,13 +268,22 @@ export const createPDFDoc = async (data: ReceiptData): Promise<jsPDF> => {
   if (data.products.length > 0) {
     data.products.forEach((p, i) => {
         const lineTotal = p.price * p.quantity;
-        subtotal += lineTotal;
+        const displayTotal = p.isExchange ? -lineTotal : lineTotal;
+        const displayPrice = p.isExchange ? -p.price : p.price;
+        subtotal += displayTotal;
 
         doc.setFontSize(8); 
         doc.setFont("helvetica", "normal");
-        const splitDesc = doc.splitTextToSize(p.name, cols[1].w - 4);
+        const productName = p.isExchange ? `(TROCA) ${p.name}` : p.name;
+        const splitDesc = doc.splitTextToSize(productName, cols[1].w - 4);
         
+        let exchangeDetailsLines: string[] = [];
+        if (p.isExchange && p.exchangeDetails) {
+            exchangeDetailsLines = doc.splitTextToSize(`OBS: ${p.exchangeDetails}`, cols[1].w - 6);
+        }
+
         let rowH = 6 + (splitDesc.length * 3.5); 
+        if (exchangeDetailsLines.length > 0) rowH += (exchangeDetailsLines.length * 3.5) + 1;
         if (p.warrantyTime) rowH += 3.5; 
         if (rowH < 8) rowH = 8; 
 
@@ -303,7 +312,7 @@ export const createPDFDoc = async (data: ReceiptData): Promise<jsPDF> => {
         doc.line(margin, y + rowH, margin + contentWidth, y + rowH);
 
         let currX = margin;
-        doc.setTextColor(COLORS.textDark);
+        doc.setTextColor(p.isExchange ? COLORS.red : COLORS.textDark);
         doc.setFontSize(8);
         const codeText = p.code || '-';
         doc.text(codeText, currX + 2, y + 4);
@@ -325,24 +334,35 @@ export const createPDFDoc = async (data: ReceiptData): Promise<jsPDF> => {
         doc.setFontSize(8);
         doc.text(splitDesc, currX + 2, y + 4);
         
+        let currentTextY = y + 4 + (splitDesc.length * 3.5);
+
+        if (exchangeDetailsLines.length > 0) {
+            doc.setFontSize(7);
+            doc.setTextColor(COLORS.red);
+            doc.setFont("helvetica", "italic");
+            doc.text(exchangeDetailsLines, currX + 4, currentTextY + 1);
+            currentTextY += (exchangeDetailsLines.length * 3.5) + 1;
+            doc.setFont("helvetica", "normal");
+        }
+        
         if (p.warrantyTime) {
             doc.setFontSize(6);
             doc.setTextColor(COLORS.textGray);
             const warrantyTxt = `GARANTIA DE FÁBRICA: ${p.warrantyTime} ${p.warrantyUnit} | 90 DIAS LOJA`;
-            doc.text(warrantyTxt, currX + 2, y + 4 + (splitDesc.length * 3.5) + 2);
+            doc.text(warrantyTxt, currX + 2, currentTextY + 2);
         }
 
         currX += cols[1].w;
         doc.setFontSize(8);
-        doc.setTextColor(COLORS.textDark);
+        doc.setTextColor(p.isExchange ? COLORS.red : COLORS.textDark);
         doc.text(p.quantity.toString(), currX + cols[2].w / 2, y + 4, { align: "center" });
 
         currX += cols[2].w;
-        doc.text(p.price.toLocaleString('pt-BR', { minimumFractionDigits: 2 }), currX + cols[3].w - 2, y + 4, { align: "right" });
+        doc.text(displayPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2 }), currX + cols[3].w - 2, y + 4, { align: "right" });
 
         currX += cols[3].w;
         doc.setFont("helvetica", "bold");
-        doc.text(lineTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 }), currX + cols[4].w - 2, y + 4, { align: "right" });
+        doc.text(displayTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 }), currX + cols[4].w - 2, y + 4, { align: "right" });
 
         y += rowH;
     });

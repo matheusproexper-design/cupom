@@ -87,6 +87,8 @@ export default function App() {
   const [selectedProduct, setSelectedProduct] = useState("");
   const [selectedPrice, setSelectedPrice] = useState("");
   const [selectedQuantity, setSelectedQuantity] = useState("1");
+  const [isExchange, setIsExchange] = useState(false);
+  const [exchangeDetails, setExchangeDetails] = useState("");
 
   // Search state
   const [searchTerm, setSearchTerm] = useState("");
@@ -190,7 +192,9 @@ export default function App() {
       price: priceValue,
       quantity: quantityValue,
       warrantyTime: "", // Default empty, user edits in list
-      warrantyUnit: "MESES" // Default unit
+      warrantyUnit: "MESES", // Default unit
+      isExchange: isExchange,
+      exchangeDetails: isExchange ? exchangeDetails : ""
     };
 
     setData(prev => ({
@@ -204,6 +208,8 @@ export default function App() {
     setDebouncedSearchTerm("");
     setSelectedPrice("");
     setSelectedQuantity("1");
+    setIsExchange(false);
+    setExchangeDetails("");
   };
 
   const handleRemoveProduct = (index: number) => {
@@ -222,6 +228,18 @@ export default function App() {
                 } else {
                     return { ...p, warrantyUnit: value as 'DIAS' | 'MESES' | 'ANOS' };
                 }
+            }
+            return p;
+        });
+        return { ...prev, products: newProducts };
+    });
+  };
+
+  const handleUpdateProductExchangeDetails = (index: number, value: string) => {
+    setData(prev => {
+        const newProducts = prev.products.map((p, i) => {
+            if (i === index) {
+                return { ...p, exchangeDetails: value };
             }
             return p;
         });
@@ -378,6 +396,7 @@ export default function App() {
 
   // --- BUNDLE LOGIC & LABELING ---
   const getBundleDetails = (products: Product[]) => {
+    const activeProducts = products.filter(p => !p.isExchange);
     let totalDiscount = 0;
     let hasBaseDiscount = false;
     let hasPillowDiscount = false;
@@ -385,11 +404,11 @@ export default function App() {
     const specificPillowName = "TRAVESSEIRO FLOCOS CONFORTO 20CM 60X40 BRANCO";
 
     // 1. Check if there is ANY product other than the specific pillow
-    const hasAnyOtherProduct = products.some(p => p.name !== specificPillowName);
+    const hasAnyOtherProduct = activeProducts.some(p => p.name !== specificPillowName);
 
     // --- RULE: Check for any "BASE BAÚ" in the cart ---
     // If a Base Baú is present, the combo discount (Base + Mattress) is disabled.
-    const hasBaseBau = products.some(p => {
+    const hasBaseBau = activeProducts.some(p => {
         const n = p.name.toUpperCase();
         return n.startsWith("BASE") && (n.includes("BAÚ") || n.includes("BAU"));
     });
@@ -400,7 +419,7 @@ export default function App() {
     let queenMattressCount = 0;
     let superKingMattressCount = 0;
 
-    products.forEach(p => {
+    activeProducts.forEach(p => {
         const name = p.name.toUpperCase();
         if (name.includes("COLCHÃO") || name.includes("COLCHAO")) {
             if (name.includes("SUPER KING")) superKingMattressCount += p.quantity;
@@ -411,7 +430,7 @@ export default function App() {
     });
 
     // 3. Iterate products to apply specific rules
-    products.forEach(p => {
+    activeProducts.forEach(p => {
         const name = p.name.toUpperCase();
         
         // RULE: Pillow "FLOCOS CONFORTO" is discounted (free) if there is ANY other product in the cart
@@ -491,7 +510,10 @@ export default function App() {
   };
 
   // --- TOTAL CALCULATIONS ---
-  const subtotal = data.products.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0);
+  const subtotal = data.products.reduce((acc, curr) => {
+    const itemTotal = curr.price * curr.quantity;
+    return acc + (curr.isExchange ? -itemTotal : itemTotal);
+  }, 0);
   const bundleDetails = getBundleDetails(data.products);
   const bundleDiscount = bundleDetails.totalDiscount;
   const bundleDiscountLabel = bundleDetails.label;
@@ -840,6 +862,33 @@ export default function App() {
                         />
                     </div>
 
+                    <div className="flex items-center gap-2 px-1">
+                        <label className="flex items-center gap-2 cursor-pointer group">
+                            <div className="relative flex items-center">
+                                <input 
+                                    type="checkbox" 
+                                    checked={isExchange}
+                                    onChange={(e) => setIsExchange(e.target.checked)}
+                                    className="sr-only peer"
+                                />
+                                <div className="w-10 h-5 bg-gray-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-red-600"></div>
+                            </div>
+                            <span className="text-xs font-bold text-gray-400 group-hover:text-gray-200 transition-colors uppercase tracking-wider">Troca de Produto</span>
+                        </label>
+                    </div>
+
+                    {isExchange && (
+                        <div className="px-1 animate-in fade-in slide-in-from-top-1 duration-200">
+                            <TextArea 
+                                label="Detalhes da Troca"
+                                value={exchangeDetails}
+                                onChange={(e) => setExchangeDetails(e.target.value)}
+                                placeholder="Descreva o motivo ou detalhes da troca..."
+                                className="text-xs min-h-[60px]"
+                            />
+                        </div>
+                    )}
+
                     <button 
                         onClick={handleAddProduct}
                         className="w-full bg-gray-700 hover:bg-gray-600 active:bg-gray-500 text-white text-sm font-semibold rounded-lg py-3 flex items-center justify-center gap-2 transition-colors uppercase mt-1"
@@ -857,12 +906,15 @@ export default function App() {
                                 <div className="flex-1 min-w-0 pr-4">
                                     <div className="flex items-center gap-2 mb-1">
                                         <span className="text-[10px] text-gray-500 border border-gray-700 rounded px-1">{p.code}</span>
+                                        {p.isExchange && (
+                                            <span className="text-[9px] bg-red-900/40 text-red-400 border border-red-500/30 rounded px-1 font-bold uppercase">Troca</span>
+                                        )}
                                         <p className="text-sm text-gray-200 truncate font-medium">
                                             <span className="text-gray-400 mr-1">{p.quantity}x</span> {p.name}
                                         </p>
                                     </div>
-                                    <p className="text-xs text-green-400 font-bold">
-                                        {p.quantity} x {p.price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} = {(p.quantity * p.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                    <p className={`text-xs font-bold ${p.isExchange ? 'text-red-400' : 'text-green-400'}`}>
+                                        {p.isExchange ? '-' : ''}{p.quantity} x {p.price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} = {p.isExchange ? '-' : ''}{(p.quantity * p.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                     </p>
                                 </div>
                                 <button 
@@ -896,6 +948,20 @@ export default function App() {
                                     </select>
                                 </div>
                             </div>
+
+                            {p.isExchange && (
+                                <div className="mt-2 pt-2 border-t border-gray-700/50">
+                                    <div className="relative">
+                                        <textarea 
+                                            placeholder="Detalhes da troca..."
+                                            value={p.exchangeDetails || ''}
+                                            onChange={(e) => handleUpdateProductExchangeDetails(idx, e.target.value)}
+                                            className="w-full bg-gray-900 border-2 border-gray-700 hover:border-gray-600 focus:border-red-500 text-gray-200 text-xs rounded px-2 py-1.5 focus:ring-1 focus:ring-red-500 min-h-[40px] resize-none"
+                                        />
+                                        <span className="absolute right-2 top-1 text-[9px] text-red-500/50 pointer-events-none font-bold uppercase">Detalhes da Troca</span>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                         ))}
                         

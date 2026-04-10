@@ -6,6 +6,8 @@ export interface Product {
   quantity: number;
   warrantyTime?: string;
   warrantyUnit?: 'DIAS' | 'MESES' | 'ANOS';
+  isExchange?: boolean;
+  exchangeDetails?: string;
 }
 
 export interface CatalogItem {
