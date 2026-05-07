@@ -95,8 +95,9 @@ export default function App() {
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
 
-  // State for discount input as string
+  // State for discount and shipping input as string
   const [discountInput, setDiscountInput] = useState("");
+  const [shippingInput, setShippingInput] = useState("");
 
   // Debounce effect for search term
   useEffect(() => {
@@ -132,6 +133,7 @@ export default function App() {
         setData(INITIAL_DATA);
         setSearchTerm("");
         setDiscountInput("");
+        setShippingInput("");
         setSelectedProduct("");
         setSelectedPrice("");
         setSelectedQuantity("1");
@@ -256,6 +258,13 @@ export default function App() {
 
   const handleDiscountTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setData(prev => ({ ...prev, discountType: e.target.value as 'fixed' | 'percentage' }));
+  };
+
+  const handleShippingInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setShippingInput(val);
+    const num = parseFloat(val.replace('.', '').replace(',', '.') || "0");
+    setData(prev => ({ ...prev, shippingValue: num }));
   };
 
   const handleSmartImport = async () => {
@@ -526,7 +535,7 @@ export default function App() {
   }
 
   const totalDiscount = bundleDiscount + manualDiscount;
-  const totalValue = Math.max(0, subtotal - totalDiscount);
+  const totalValue = Math.max(0, subtotal - totalDiscount + (data.shippingValue || 0));
 
   // Helper to create a temporary data object with the FULL discount applied for the PDF/Message
   const getDataForExport = () => {
@@ -1009,6 +1018,20 @@ export default function App() {
                             </div>
                             </div>
 
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-xs text-gray-400 uppercase font-bold tracking-wider">Frete de Entrega</span>
+                            </div>
+                            <div className="mb-4">
+                                <Input 
+                                    label="Valor do Frete" 
+                                    type="text"
+                                    value={shippingInput}
+                                    onChange={handleShippingInputChange}
+                                    placeholder="0,00"
+                                    icon={<Tag className="w-4 h-4" />}
+                                />
+                            </div>
+
                             <div className="flex flex-col gap-1 text-sm border-t border-gray-700/50 pt-2 mt-4">
                                 <div className="pt-2 flex justify-between items-center text-gray-400">
                                     <span>Subtotal:</span>
@@ -1028,6 +1051,16 @@ export default function App() {
                                         <span>- {manualDiscount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                                     </div>
                                 )}
+
+                                <div className="flex justify-between items-center text-yellow-400">
+                                    <span>Frete:</span>
+                                    <span className="font-bold">
+                                        {data.shippingValue && data.shippingValue > 0 
+                                            ? `+ ${data.shippingValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`
+                                            : 'FRETE GRÁTIS'
+                                        }
+                                    </span>
+                                </div>
 
                                 <div className="flex justify-between items-center mt-1 pt-2 border-t border-gray-700">
                                     <span className="font-bold text-white">Total Final:</span>
@@ -1353,6 +1386,15 @@ export default function App() {
                                     <span>- {manualDiscount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                                 </div>
                              )}
+                             <div className="flex justify-between mb-1 text-yellow-600">
+                                <span>Frete:</span>
+                                <span className="font-bold">
+                                    {data.shippingValue && data.shippingValue > 0 
+                                        ? `+ ${data.shippingValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`
+                                        : 'FRETE GRÁTIS'
+                                    }
+                                </span>
+                             </div>
                              <div className="flex justify-between mt-2 bg-gray-50 p-1 rounded font-bold text-gray-900 border border-gray-200">
                                  <span>TOTAL:</span>
                                  <span>{totalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>

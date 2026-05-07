@@ -34,6 +34,7 @@ export interface ReceiptData {
   products: Product[];
   discountType: 'fixed' | 'percentage';
   discountValue: number;
+  shippingValue?: number;
   bundleDiscount?: number;
   bundleLabel?: string;
 }
@@ -57,6 +58,7 @@ export const INITIAL_DATA: ReceiptData = {
   products: [],
   discountType: 'fixed',
   discountValue: 0,
+  shippingValue: 0,
   bundleDiscount: 0,
   bundleLabel: '',
 };

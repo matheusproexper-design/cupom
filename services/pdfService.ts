@@ -427,7 +427,8 @@ export const createPDFDoc = async (data: ReceiptData): Promise<jsPDF> => {
     manualDiscountAmount = subtotal * (data.discountValue / 100);
   }
   const bundleDiscountAmount = data.bundleDiscount || 0;
-  const finalTotal = Math.max(0, subtotal - manualDiscountAmount - bundleDiscountAmount);
+  const shippingValue = data.shippingValue || 0;
+  const finalTotal = Math.max(0, subtotal - manualDiscountAmount - bundleDiscountAmount + shippingValue);
 
   const drawTotalLine = (label: string, value: string, color: string = COLORS.textGray, isBold: boolean = false) => {
     doc.setFont("helvetica", isBold ? "bold" : "normal");
@@ -446,6 +447,11 @@ export const createPDFDoc = async (data: ReceiptData): Promise<jsPDF> => {
   }
   if (manualDiscountAmount > 0) {
     drawTotalLine("Desc. Vendedor:", `- ${manualDiscountAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`, COLORS.red);
+  }
+  if (shippingValue > 0) {
+    drawTotalLine("Frete:", `+ ${shippingValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`, COLORS.textGray);
+  } else {
+    drawTotalLine("Frete:", "FRETE GRÁTIS", COLORS.brandBlue);
   }
   totalsY += 1;
   doc.setFillColor(COLORS.bgLight);

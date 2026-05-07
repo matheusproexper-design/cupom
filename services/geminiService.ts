@@ -102,6 +102,7 @@ export const parseReceiptFromText = async (text: string, catalogNames: string[] 
                 contact1: { type: Type.STRING },
                 contact2: { type: Type.STRING },
                 paymentMethod: { type: Type.STRING },
+                shippingValue: { type: Type.NUMBER },
               }
             },
             items: {
