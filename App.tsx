@@ -194,6 +194,26 @@ export default function App() {
     setSalespeople(salespeople.filter(s => s !== name));
   };
 
+  const saveProductToTypesTS = async (name: string, price: number) => {
+    try {
+      const response = await fetch('/api/catalog', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name, price }),
+      });
+      if (response.ok) {
+        console.log(`[BelConfort Disk] Produto "${name}" gravado com sucesso no types.ts!`);
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        console.warn(`[BelConfort Disk] Aviso: ${errorData.error || "Erro de rede"}`);
+      }
+    } catch (err) {
+      console.error("[BelConfort Disk] Erro ao enviar produto para gravação:", err);
+    }
+  };
+
   const handleAddCustomProduct = () => {
     if (!newProductName.trim()) return;
     
@@ -214,6 +234,10 @@ export default function App() {
     };
 
     setCustomProducts(prev => [...prev, newProductItem]);
+    
+    // Persist permanently in source code file types.ts via Server API
+    saveProductToTypesTS(name, priceValue);
+
     setNewProductName("");
     setNewProductPrice("");
   };
@@ -260,6 +284,9 @@ export default function App() {
         price: priceValue
       };
       setCustomProducts(prev => [...prev, newProductItem]);
+      
+      // Auto-save to types.ts on local disk
+      saveProductToTypesTS(productName, priceValue);
     }
 
     // Generate a pseudo-code (Numeric only - 6 digits)
