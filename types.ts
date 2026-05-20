@@ -222,6 +222,7 @@ export const PRODUCT_CATALOG: CatalogItem[] = [
   { name: "COLCHÃO SALINAS 24CM CASAL PRETO", price: 1150.00 },
   { name: "COLCHÃO SALINAS 24CM CASAL VINHO", price: 1150.00 },
   { name: "COLCHÃO SALINAS 24CM QUEEN MARROM", price: 1400.00 },
+  { name: "COLCHÃO SALINAS 24CM QUEEN PRETO", price: 1400.00 },
   { name: "COLCHÃO SALINAS 24CM SUPER KING PRETO", price: 1700.00 },
   { name: "COLCHÃO SMART FLEX 30CM CASAL LARANJA", price: 1350.00 },
   { name: "COLCHÃO SMART ILHEUS 25CM CASAL BEGE", price: 1250.00 },
