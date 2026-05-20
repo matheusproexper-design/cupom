@@ -245,18 +245,29 @@ export default function App() {
   };
 
   const handleAddProduct = () => {
-    if (!selectedProduct) return;
+    const productName = (selectedProduct || searchTerm.trim()).toUpperCase();
+    if (!productName) return;
     
     // Parse the price input (handling comma as decimal separator)
     const priceValue = parseFloat(selectedPrice.replace('.', '').replace(',', '.') || "0");
     const quantityValue = parseInt(selectedQuantity) || 1;
     
+    // Auto-save to catalog if it's a new product
+    const exists = fullCatalog.some(p => p.name.toUpperCase() === productName.trim().toUpperCase());
+    if (!exists) {
+      const newProductItem: CatalogItem = {
+        name: productName,
+        price: priceValue
+      };
+      setCustomProducts(prev => [...prev, newProductItem]);
+    }
+
     // Generate a pseudo-code (Numeric only - 6 digits)
     const pseudoCode = Math.floor(100000 + Math.random() * 900000).toString();
 
     const newProduct: Product = {
       code: pseudoCode,
-      name: selectedProduct,
+      name: productName,
       price: priceValue,
       quantity: quantityValue,
       warrantyTime: "", // Default empty, user edits in list
