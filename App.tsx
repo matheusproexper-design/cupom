@@ -864,10 +864,9 @@ export default function App() {
                             label="Valor (R$)" 
                             type="text"
                             value={selectedPrice}
-                            readOnly
+                            onChange={(e) => setSelectedPrice(e.target.value)}
                             placeholder="0,00"
                             icon={<Tag className="w-4 h-4" />}
-                            className="bg-gray-800/50 text-gray-500 cursor-not-allowed border-gray-700 focus:ring-0 focus:border-gray-700 hover:border-gray-700"
                         />
                     </div>
 
