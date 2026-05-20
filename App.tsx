@@ -96,6 +96,24 @@ export default function App() {
     return [];
   });
 
+  // Fetch custom catalog from server on app load to sync across different devices
+  useEffect(() => {
+    const fetchServerCatalog = async () => {
+      try {
+        const response = await fetch('/api/catalog');
+        if (response.ok) {
+          const data = await response.json();
+          if (Array.isArray(data)) {
+            setCustomProducts(data);
+          }
+        }
+      } catch (err) {
+        console.error("[BelConfort] Falha ao sincronizar catálogo centralizado do servidor:", err);
+      }
+    };
+    fetchServerCatalog();
+  }, []);
+
   const [newProductName, setNewProductName] = useState("");
   const [newProductPrice, setNewProductPrice] = useState("");
 
@@ -242,9 +260,21 @@ export default function App() {
     setNewProductPrice("");
   };
 
-  const handleRemoveCustomProduct = (name: string) => {
+  const handleRemoveCustomProduct = async (name: string) => {
     if (window.confirm(`Tem certeza que deseja excluir o produto "${name}" do catálogo?`)) {
       setCustomProducts(prev => prev.filter(p => p.name !== name));
+      
+      try {
+        await fetch('/api/catalog', {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ name }),
+        });
+      } catch (err) {
+        console.error("[BelConfort Disk] Erro ao sincronizar remoção no servidor:", err);
+      }
     }
   };
 
