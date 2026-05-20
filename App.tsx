@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { INITIAL_DATA, ReceiptData, PRODUCTS_LIST, PRODUCT_CATALOG, Product } from './types';
+import { INITIAL_DATA, ReceiptData, PRODUCTS_LIST, PRODUCT_CATALOG, Product, CatalogItem } from './types';
 import { generateReceiptPDF, getReceiptBlob } from './services/pdfService';
 import { generateClientMessage, parseReceiptFromText } from './services/geminiService';
 import { Input, Select, TextArea } from './components/Input';
@@ -78,10 +78,46 @@ export default function App() {
   const [newSalespersonName, setNewSalespersonName] = useState("");
 
   // UI State
-  const [activeTab, setActiveTab] = useState<'manual' | 'import' | 'team'>('manual');
+  const [activeTab, setActiveTab] = useState<'manual' | 'import' | 'team' | 'catalog'>('manual');
   const [importText, setImportText] = useState("");
   const [isImporting, setIsImporting] = useState(false);
   const [importError, setImportError] = useState<{title: string, msg: string} | null>(null);
+
+  // Custom Products Catalog State
+  const [customProducts, setCustomProducts] = useState<CatalogItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('belconfort_custom_catalog');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.error("Failed to load custom catalog from localStorage", e);
+    }
+    return [];
+  });
+
+  const [newProductName, setNewProductName] = useState("");
+  const [newProductPrice, setNewProductPrice] = useState("");
+
+  // Combined product catalog
+  const fullCatalog = React.useMemo(() => {
+    const combined = [...customProducts, ...PRODUCT_CATALOG];
+    return combined.sort((a, b) => a.name.localeCompare(b.name));
+  }, [customProducts]);
+
+  const fullProductsList = React.useMemo(() => {
+    return fullCatalog.map(p => p.name);
+  }, [fullCatalog]);
+
+  // Update Fuse search collections whenever catalog updates
+  useEffect(() => {
+    fuse.setCollection(fullProductsList);
+  }, [fullProductsList]);
+
+  // Save custom catalog to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('belconfort_custom_catalog', JSON.stringify(customProducts));
+  }, [customProducts]);
 
   // Temporary state for adding a product
   const [selectedProduct, setSelectedProduct] = useState("");
@@ -158,10 +194,40 @@ export default function App() {
     setSalespeople(salespeople.filter(s => s !== name));
   };
 
+  const handleAddCustomProduct = () => {
+    if (!newProductName.trim()) return;
+    
+    const name = newProductName.trim().toUpperCase();
+    
+    // Parse the default price (handling comma as decimal separator)
+    const priceValue = parseFloat(newProductPrice.replace('.', '').replace(',', '.') || "0");
+    
+    // Check if name already exists in fullCatalog
+    if (fullCatalog.some(p => p.name === name)) {
+      alert("Este produto ou um produto com o mesmo nome já existe no catálogo.");
+      return;
+    }
+
+    const newProductItem: CatalogItem = {
+      name,
+      price: priceValue
+    };
+
+    setCustomProducts(prev => [...prev, newProductItem]);
+    setNewProductName("");
+    setNewProductPrice("");
+  };
+
+  const handleRemoveCustomProduct = (name: string) => {
+    if (window.confirm(`Tem certeza que deseja excluir o produto "${name}" do catálogo?`)) {
+      setCustomProducts(prev => prev.filter(p => p.name !== name));
+    }
+  };
+
   // Filter products using Fuse.js fuzzy search based on debounced term
   const filteredProducts = debouncedSearchTerm
     ? fuse.search(debouncedSearchTerm).map(result => result.item)
-    : PRODUCTS_LIST;
+    : fullProductsList;
 
   const handleSearchSelect = (name: string) => {
     setSelectedProduct(name);
@@ -170,7 +236,7 @@ export default function App() {
     setIsSearchOpen(false);
     
     // Auto-fill price
-    const product = PRODUCT_CATALOG.find(p => p.name === name);
+    const product = fullCatalog.find(p => p.name === name);
     if (product) {
         setSelectedPrice(product.price.toFixed(2).replace('.', ','));
     } else {
@@ -274,7 +340,7 @@ export default function App() {
     setImportError(null);
     try {
       // Pass the system product list so AI can match exact names
-      const result = await parseReceiptFromText(importText, PRODUCTS_LIST);
+      const result = await parseReceiptFromText(importText, fullProductsList);
       
       // LOGIC UPDATE: Check existing products in the cart to update quantity instead of duplicating
       // Create a working copy of current products
@@ -283,7 +349,7 @@ export default function App() {
       if (result.items && Array.isArray(result.items)) {
         result.items.forEach((item: { name: string, quantity: number }) => {
             // item comes from AI as { name: "EXACT NAME", quantity: 2 }
-            const systemProduct = PRODUCT_CATALOG.find(p => p.name === item.name);
+            const systemProduct = fullCatalog.find(p => p.name === item.name);
             
             if (systemProduct) {
                 const quantityToAdd = item.quantity || 1;
@@ -648,39 +714,50 @@ export default function App() {
           <div className="lg:col-span-5 space-y-6">
             
             {/* Tab Navigation */}
-            <div className="flex p-1 space-x-1 bg-gray-900 rounded-xl border border-gray-800">
+            <div className="grid grid-cols-2 sm:flex p-1 gap-1 bg-gray-900 rounded-xl border border-gray-800">
                 <button
                 onClick={() => setActiveTab('manual')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 ${
+                className={`flex items-center justify-center gap-2 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 ${
                     activeTab === 'manual'
                     ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
                     : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
-                }`}
+                } sm:flex-1`}
                 >
                 <FileText className="w-4 h-4" />
                 Manual
                 </button>
                 <button
                 onClick={() => setActiveTab('import')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 ${
+                className={`flex items-center justify-center gap-2 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 ${
                     activeTab === 'import'
                     ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
                     : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
-                }`}
+                } sm:flex-1`}
                 >
                 <Sparkles className="w-4 h-4" />
                 Importar
                 </button>
                 <button
                 onClick={() => setActiveTab('team')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 ${
+                className={`flex items-center justify-center gap-2 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 ${
                     activeTab === 'team'
                     ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
                     : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
-                }`}
+                } sm:flex-1`}
                 >
                 <Users className="w-4 h-4" />
                 Equipe
+                </button>
+                <button
+                onClick={() => setActiveTab('catalog')}
+                className={`flex items-center justify-center gap-2 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 ${
+                    activeTab === 'catalog'
+                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
+                    : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
+                } sm:flex-1`}
+                >
+                <Barcode className="w-4 h-4" />
+                Catálogo
                 </button>
             </div>
 
@@ -800,6 +877,76 @@ export default function App() {
               </div>
             )}
             
+             {/* Catalog Management Section */}
+             {activeTab === 'catalog' && (
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-300">
+                 <div className="flex items-center justify-between mb-6">
+                    <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                      <span className="w-1 h-6 bg-blue-500 rounded-full"></span>
+                      Cadastrar Novo Produto
+                    </h2>
+                    <span className="text-xs text-gray-500 uppercase tracking-wider">Catálogo</span>
+                  </div>
+
+                  <div className="bg-gray-800/50 p-4 rounded-xl border border-gray-700/50 mb-6 space-y-4">
+                    <Input
+                      label="Nome do Produto"
+                      value={newProductName}
+                      onChange={(e) => setNewProductName(e.target.value)}
+                      placeholder="Ex: COLCHÃO ECO PREMIUM 22CM CASAL MARROM"
+                      className="uppercase"
+                      icon={<Barcode className="w-4 h-4"/>}
+                    />
+                    <div className="flex gap-2 items-end">
+                      <div className="flex-1">
+                        <Input
+                          label="Preço Padrão (R$)"
+                          value={newProductPrice}
+                          onChange={(e) => setNewProductPrice(e.target.value)}
+                          placeholder="Ex: 1200,00"
+                          icon={<Tag className="w-4 h-4"/>}
+                        />
+                      </div>
+                      <button
+                        onClick={handleAddCustomProduct}
+                        disabled={!newProductName.trim() || !newProductPrice.trim()}
+                        className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white p-3.5 rounded-lg transition-colors flex-shrink-0"
+                      >
+                        <Plus className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <h3 className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-2">Produtos no Seu Catálogo</h3>
+                    
+                    <div className="max-h-80 overflow-y-auto space-y-2 pr-1 scrollbar-thin scrollbar-thumb-gray-800 scrollbar-track-transparent">
+                      {customProducts.map((product) => (
+                        <div key={product.name} className="flex items-center justify-between bg-gray-800 p-3 rounded-lg border border-gray-700">
+                           <div className="flex-1 min-w-0 pr-3">
+                             <p className="text-[9px] text-gray-400 font-mono tracking-wider font-bold">PRODUTO PERSONALIZADO</p>
+                             <span className="text-sm font-medium text-gray-200 block truncate uppercase">{product.name}</span>
+                             <span className="text-xs text-green-400 font-bold">
+                               {product.price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                             </span>
+                           </div>
+                           <button 
+                             onClick={() => handleRemoveCustomProduct(product.name)}
+                             className="p-2 text-gray-500 hover:text-red-400 hover:bg-red-400/10 rounded transition-colors flex-shrink-0"
+                           >
+                             <Trash2 className="w-4 h-4" />
+                           </button>
+                        </div>
+                      ))}
+                      
+                      {customProducts.length === 0 && (
+                        <p className="text-center text-gray-500 text-sm py-4 text-gray-400">Nenhum produto personalizado cadastrado. Adicione um novo acima!</p>
+                      )}
+                    </div>
+                  </div>
+              </div>
+             )}
+
             {/* Products Section (Manual) */}
             {activeTab === 'manual' && (
              <>
@@ -843,8 +990,19 @@ export default function App() {
                                         </button>
                                     ))
                                 ) : (
-                                    <div className="px-4 py-3 text-sm text-gray-500 text-center">
-                                        Nenhum produto encontrado
+                                    <div className="px-4 py-4 text-sm text-gray-500 text-center flex flex-col items-center gap-2">
+                                        <span>Nenhum produto encontrado</span>
+                                        <button 
+                                            type="button"
+                                            onClick={() => {
+                                                setNewProductName(searchTerm);
+                                                setActiveTab('catalog');
+                                            }}
+                                            className="text-xs font-semibold text-blue-400 hover:text-blue-300 flex items-center justify-center gap-1 bg-blue-500/10 hover:bg-blue-500/20 px-3 py-1.5 rounded-full border border-blue-500/20 transition-all uppercase"
+                                        >
+                                            <Plus className="w-3.5 h-3.5" />
+                                            Cadastrar Novo Produto
+                                        </button>
                                     </div>
                                 )}
                             </div>
