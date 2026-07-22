@@ -1,5 +1,6 @@
 {
   "name": "PDF",
   "description": "A professional receipt generator platform. Fill in purchase details, generate PDF receipts, and use AI to draft client communication messages.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
