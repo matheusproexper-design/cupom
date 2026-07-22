@@ -1114,10 +1114,10 @@ export default function App() {
                     {isExchange && (
                         <div className="px-1 animate-in fade-in slide-in-from-top-1 duration-200">
                             <TextArea 
-                                label="Detalhes da Troca"
+                                label="Motivo / Observação da Troca"
                                 value={exchangeDetails}
                                 onChange={(e) => setExchangeDetails(e.target.value)}
-                                placeholder="Descreva o motivo ou detalhes da troca..."
+                                placeholder="Informe por qual motivo este produto foi trocado (ex: Defeito de fabricação, tamanho incorreto, garantia...)"
                                 className="text-xs min-h-[60px]"
                             />
                         </div>
@@ -1135,25 +1135,32 @@ export default function App() {
                     {data.products.length > 0 && (
                     <div className="space-y-2 mt-4">
                         {data.products.map((p, idx) => (
-                        <div key={idx} className="bg-gray-800 p-3 rounded-lg border border-gray-700 group">
+                        <div key={idx} className={`p-3 rounded-lg border group transition-all ${
+                            p.isExchange 
+                                ? 'bg-red-950/20 border-2 border-red-500/60 shadow-lg shadow-red-950/20' 
+                                : 'bg-gray-800 border-gray-700'
+                        }`}>
                             <div className="flex items-center justify-between mb-2">
                                 <div className="flex-1 min-w-0 pr-4">
-                                    <div className="flex items-center gap-2 mb-1">
-                                        <span className="text-[10px] text-gray-500 border border-gray-700 rounded px-1">{p.code}</span>
+                                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                        <span className="text-[10px] text-gray-400 border border-gray-700 rounded px-1.5 py-0.5 font-mono">{p.code}</span>
                                         {p.isExchange && (
-                                            <span className="text-[9px] bg-red-900/40 text-red-400 border border-red-500/30 rounded px-1 font-bold uppercase">Troca</span>
+                                            <span className="text-[10px] bg-red-600 text-white font-extrabold px-2 py-0.5 rounded uppercase tracking-wider flex items-center gap-1 shadow-sm">
+                                                <RotateCcw className="w-3 h-3"/> PRODUTO DE TROCA
+                                            </span>
                                         )}
-                                        <p className="text-sm text-gray-200 truncate font-medium">
+                                        <p className={`text-sm truncate font-semibold ${p.isExchange ? 'text-red-300' : 'text-gray-200'}`}>
                                             <span className="text-gray-400 mr-1">{p.quantity}x</span> {p.name}
                                         </p>
                                     </div>
                                     <p className={`text-xs font-bold ${p.isExchange ? 'text-red-400' : 'text-green-400'}`}>
-                                        {p.isExchange ? '-' : ''}{p.quantity} x {p.price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} = {p.isExchange ? '-' : ''}{(p.quantity * p.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                        {p.isExchange ? 'ABATIMENTO DE TROCA: -' : ''}{p.quantity} x {p.price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} = {p.isExchange ? '-' : ''}{(p.quantity * p.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                     </p>
                                 </div>
                                 <button 
                                 onClick={() => handleRemoveProduct(idx)}
                                 className="p-2 text-gray-500 hover:text-red-400 hover:bg-red-400/10 rounded transition-colors"
+                                title="Remover produto"
                                 >
                                 <Trash2 className="w-4 h-4" />
                                 </button>
@@ -1184,16 +1191,16 @@ export default function App() {
                             </div>
 
                             {p.isExchange && (
-                                <div className="mt-2 pt-2 border-t border-gray-700/50">
-                                    <div className="relative">
-                                        <textarea 
-                                            placeholder="Detalhes da troca..."
-                                            value={p.exchangeDetails || ''}
-                                            onChange={(e) => handleUpdateProductExchangeDetails(idx, e.target.value)}
-                                            className="w-full bg-gray-900 border-2 border-gray-700 hover:border-gray-600 focus:border-red-500 text-gray-200 text-xs rounded px-2 py-1.5 focus:ring-1 focus:ring-red-500 min-h-[40px] resize-none"
-                                        />
-                                        <span className="absolute right-2 top-1 text-[9px] text-red-500/50 pointer-events-none font-bold uppercase">Detalhes da Troca</span>
-                                    </div>
+                                <div className="mt-2 pt-2 border-t border-red-500/30">
+                                    <label className="text-[10px] font-bold text-red-400 uppercase tracking-wider block mb-1">
+                                        Motivo / Observação da Troca:
+                                    </label>
+                                    <textarea 
+                                        placeholder="Informe por qual motivo este produto foi trocado..."
+                                        value={p.exchangeDetails || ''}
+                                        onChange={(e) => handleUpdateProductExchangeDetails(idx, e.target.value)}
+                                        className="w-full bg-gray-900/90 border-2 border-red-500/50 hover:border-red-400 focus:border-red-400 text-red-200 text-xs rounded p-2 focus:ring-1 focus:ring-red-400 min-h-[45px] resize-none"
+                                    />
                                 </div>
                             )}
                         </div>
@@ -1554,13 +1561,31 @@ export default function App() {
                          <div className="flex flex-col">
                              {data.products.length > 0 ? (
                                 data.products.map((p, i) => (
-                                    <div key={i} className="grid grid-cols-[40px_1fr_30px_60px_60px] text-[10px] text-gray-800 py-2 border-b border-gray-200 gap-2 items-start">
+                                    <div 
+                                        key={i} 
+                                        className={`grid grid-cols-[40px_1fr_30px_60px_60px] text-[10px] py-2 border-b border-gray-200 gap-2 items-start px-1 rounded-sm ${
+                                            p.isExchange ? 'bg-red-50/90 text-red-950 border-l-4 border-l-red-600' : 'text-gray-800'
+                                        }`}
+                                    >
                                         <div className="truncate flex flex-col items-start">
                                             <span>{p.code || '-'}</span>
                                             {p.code && <BarcodePreview code={p.code} />}
                                         </div>
                                         <div>
-                                            {p.name}
+                                            {p.isExchange && (
+                                                <span className="inline-block bg-red-600 text-white text-[8px] font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wider mr-1.5 shadow-sm">
+                                                    PRODUTO DE TROCA
+                                                </span>
+                                            )}
+                                            <span className={p.isExchange ? "font-bold text-red-900" : "font-normal text-gray-900"}>{p.name}</span>
+
+                                            {p.isExchange && (
+                                                <div className="mt-1 p-1.5 bg-red-100/90 border border-red-300 rounded text-[9px] text-red-950 leading-snug">
+                                                    <span className="font-extrabold uppercase text-red-800 block mb-0.5">MOTIVO DA TROCA:</span>
+                                                    <span className="font-medium italic">{p.exchangeDetails && p.exchangeDetails.trim() ? p.exchangeDetails : "Motivo não especificado"}</span>
+                                                </div>
+                                            )}
+
                                             {p.warrantyTime && (
                                                 <div className="text-[8px] text-gray-500 mt-0.5">
                                                     GARANTIA DE FÁBRICA: {p.warrantyTime} {p.warrantyUnit} | 90 DIAS LOJA
@@ -1568,8 +1593,10 @@ export default function App() {
                                             )}
                                         </div>
                                         <div className="text-center font-bold">{p.quantity}</div>
-                                        <div className="text-right">{p.price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
-                                        <div className="text-right font-bold">{(p.price * p.quantity).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+                                        <div className="text-right">{p.isExchange ? `- ${p.price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : p.price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+                                        <div className={`text-right font-bold ${p.isExchange ? 'text-red-700' : 'text-gray-900'}`}>
+                                            {p.isExchange ? `- ${(p.price * p.quantity).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : (p.price * p.quantity).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        </div>
                                     </div>
                                 ))
                              ) : (

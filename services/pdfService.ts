@@ -278,12 +278,15 @@ export const createPDFDoc = async (data: ReceiptData): Promise<jsPDF> => {
         const splitDesc = doc.splitTextToSize(productName, cols[1].w - 4);
         
         let exchangeDetailsLines: string[] = [];
-        if (p.isExchange && p.exchangeDetails) {
-            exchangeDetailsLines = doc.splitTextToSize(`OBS: ${p.exchangeDetails}`, cols[1].w - 6);
+        if (p.isExchange) {
+            const detailText = p.exchangeDetails && p.exchangeDetails.trim()
+                ? `MOTIVO DA TROCA: ${p.exchangeDetails.trim()}`
+                : `MOTIVO DA TROCA: Motivo não especificado`;
+            exchangeDetailsLines = doc.splitTextToSize(detailText, cols[1].w - 6);
         }
 
         let rowH = 6 + (splitDesc.length * 3.5); 
-        if (exchangeDetailsLines.length > 0) rowH += (exchangeDetailsLines.length * 3.5) + 1;
+        if (p.isExchange && exchangeDetailsLines.length > 0) rowH += (exchangeDetailsLines.length * 3.5) + 2;
         if (p.warrantyTime) rowH += 3.5; 
         if (rowH < 8) rowH = 8; 
 
@@ -307,7 +310,13 @@ export const createPDFDoc = async (data: ReceiptData): Promise<jsPDF> => {
              y += 6;
         }
 
-        doc.setDrawColor(COLORS.borderGray);
+        // Highlight exchange product with subtle red background
+        if (p.isExchange) {
+          doc.setFillColor('#fef2f2');
+          doc.rect(margin, y, contentWidth, rowH, 'F');
+        }
+
+        doc.setDrawColor(p.isExchange ? '#fca5a5' : COLORS.borderGray);
         doc.setLineWidth(0.1);
         doc.line(margin, y + rowH, margin + contentWidth, y + rowH);
 
@@ -332,15 +341,19 @@ export const createPDFDoc = async (data: ReceiptData): Promise<jsPDF> => {
 
         currX += cols[0].w;
         doc.setFontSize(8);
+        if (p.isExchange) {
+          doc.setFont("helvetica", "bold");
+          doc.setTextColor('#b91c1c');
+        }
         doc.text(splitDesc, currX + 2, y + 4);
         
         let currentTextY = y + 4 + (splitDesc.length * 3.5);
 
-        if (exchangeDetailsLines.length > 0) {
+        if (p.isExchange && exchangeDetailsLines.length > 0) {
             doc.setFontSize(7);
-            doc.setTextColor(COLORS.red);
-            doc.setFont("helvetica", "italic");
-            doc.text(exchangeDetailsLines, currX + 4, currentTextY + 1);
+            doc.setTextColor('#dc2626');
+            doc.setFont("helvetica", "bold");
+            doc.text(exchangeDetailsLines, currX + 3, currentTextY + 1);
             currentTextY += (exchangeDetailsLines.length * 3.5) + 1;
             doc.setFont("helvetica", "normal");
         }
