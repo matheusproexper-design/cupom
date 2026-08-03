@@ -68,7 +68,7 @@ export const generateClientMessage = async (data: ReceiptData): Promise<string> 
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.6-flash',
       contents: prompt,
       config: {
         temperature: 0.2,
@@ -99,9 +99,18 @@ export const parseReceiptFromText = async (text: string, catalogNames: string[] 
       if (result.clientData || result.items) {
         return result;
       }
+    } else {
+      const errJson = await res.json().catch(() => ({}));
+      if (errJson.error) {
+        throw new Error(errJson.error);
+      }
     }
-  } catch (e) {
-    // Fall back to direct SDK call if route unavailable
+  } catch (e: any) {
+    if (e.message && e.message !== 'Failed to fetch') {
+      console.warn("[GeminiService] Erro no servidor ao processar pedido:", e.message);
+      throw e;
+    }
+    // Fall back to direct SDK call if server route unavailable
   }
 
   const ai = getAiClient();
@@ -121,7 +130,7 @@ export const parseReceiptFromText = async (text: string, catalogNames: string[] 
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.6-flash',
       contents: prompt,
       config: {
         temperature: 0.1,
