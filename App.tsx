@@ -3,18 +3,23 @@ import React, { useState, useEffect, useRef } from 'react';
 import { INITIAL_DATA, ReceiptData, PRODUCTS_LIST, PRODUCT_CATALOG, Product, CatalogItem } from './types';
 import { generateReceiptPDF, getReceiptBlob } from './services/pdfService';
 import { generateClientMessage, parseReceiptFromText } from './services/geminiService';
+import { supabase } from './services/supabase';
 import { Input, Select, TextArea } from './components/Input';
+import { ReceiptHistoryModal } from './components/ReceiptHistoryModal';
 import { 
   Calendar, User, MapPin, Hash, Map, Building2, 
   Phone, Download, Printer, CreditCard, Plus, Trash2, Tag, Percent, Search,
   ShieldCheck, Mail, MessageCircle, FileText, Sparkles, Loader2, Barcode,
-  Users, UserPlus, ExternalLink, Share2, Copy, RotateCcw, AlertTriangle
+  Users, UserPlus, ExternalLink, Share2, Copy, RotateCcw, AlertTriangle, History,
+  CheckCircle2, RefreshCw, Database, Lock, Eye, EyeOff, ShieldAlert,
+  Palette, Layers, ShoppingBag, ArrowRight, Maximize2, X, Wand2, UserCheck, MessageSquare
 } from 'lucide-react';
 import Fuse from 'fuse.js';
 import JsBarcode from 'jsbarcode';
 
 const STORAGE_KEY = 'belconfort_receipt_data';
 const TEAM_STORAGE_KEY = 'belconfort_team_list';
+const ADMIN_DELETE_PASSWORD = '50735073Math@';
 
 // Initialize Fuse instance outside component for performance
 const fuse = new Fuse(PRODUCTS_LIST, {
@@ -78,7 +83,7 @@ export default function App() {
   const [newSalespersonName, setNewSalespersonName] = useState("");
 
   // UI State
-  const [activeTab, setActiveTab] = useState<'manual' | 'import' | 'team' | 'catalog'>('manual');
+  const [activeTab, setActiveTab] = useState<'manual' | 'import' | 'catalog'>('manual');
   const [importText, setImportText] = useState("");
   const [isImporting, setIsImporting] = useState(false);
   const [importError, setImportError] = useState<{title: string, msg: string} | null>(null);
@@ -114,8 +119,24 @@ export default function App() {
     fetchServerCatalog();
   }, []);
 
-  const [newProductName, setNewProductName] = useState("");
+  // 5 inputs to compose the product name in exact sequence: CATEGORIA -> PRODUTO -> ALTURA -> TAMANHO -> COR
+  const [newProdCategoria, setNewProdCategoria] = useState("");
+  const [newProdProduto, setNewProdProduto] = useState("");
+  const [newProdAltura, setNewProdAltura] = useState("");
+  const [newProdTamanho, setNewProdTamanho] = useState("");
+  const [newProdCor, setNewProdCor] = useState("");
   const [newProductPrice, setNewProductPrice] = useState("");
+
+  // Product name composed dynamically from the 5 inputs
+  const computedProductName = React.useMemo(() => {
+    return [
+      newProdCategoria.trim(),
+      newProdProduto.trim(),
+      newProdAltura.trim(),
+      newProdTamanho.trim(),
+      newProdCor.trim()
+    ].filter(Boolean).join(" ").toUpperCase();
+  }, [newProdCategoria, newProdProduto, newProdAltura, newProdTamanho, newProdCor]);
 
   // Combined product catalog
   const fullCatalog = React.useMemo(() => {
@@ -141,17 +162,84 @@ export default function App() {
   const [selectedProduct, setSelectedProduct] = useState("");
   const [selectedPrice, setSelectedPrice] = useState("");
   const [selectedQuantity, setSelectedQuantity] = useState("1");
+  const [selectedProductCode, setSelectedProductCode] = useState("");
   const [isExchange, setIsExchange] = useState(false);
   const [exchangeDetails, setExchangeDetails] = useState("");
 
-  // Search state
+  // Search state & Supabase Products
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [supabaseProducts, setSupabaseProducts] = useState<Array<{ id?: string; codigo?: string; nome: string; preco: number }>>([]);
+  const [isSearchingSupabase, setIsSearchingSupabase] = useState(false);
+
+  // Catalog tab & Supabase product catalog state
+  const [allSupabaseCatalog, setAllSupabaseCatalog] = useState<Array<{ id: string; codigo: string; nome: string; preco: number; criado_em?: string }>>([]);
+  const [isLoadingCatalog, setIsLoadingCatalog] = useState(false);
+  const [isSavingCustomProduct, setIsSavingCustomProduct] = useState(false);
+  const [customProductSuccess, setCustomProductSuccess] = useState<string | null>(null);
+  const [catalogSearchTerm, setCatalogSearchTerm] = useState("");
 
   // State for discount and shipping input as string
   const [discountInput, setDiscountInput] = useState("");
   const [shippingInput, setShippingInput] = useState("");
+  const [isSavingSupabase, setIsSavingSupabase] = useState(false);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+
+  // Onboarding / Welcome Modal State for Smart Import & Attendant Identification
+  const [isWelcomeModalOpen, setIsWelcomeModalOpen] = useState(false);
+  const [modalSalesperson, setModalSalesperson] = useState(() => {
+    return localStorage.getItem('belconfort_saved_salesperson') || '';
+  });
+  const [modalImportText, setModalImportText] = useState("");
+  const [isModalImporting, setIsModalImporting] = useState(false);
+  const [modalImportError, setModalImportError] = useState<{ title: string; msg: string } | null>(null);
+
+  // Automatically require attendant identification on first entry if no name is saved
+  useEffect(() => {
+    const saved = localStorage.getItem('belconfort_saved_salesperson');
+    if (saved && saved.trim()) {
+      setData(prev => ({
+        ...prev,
+        salesperson: prev.salesperson || saved.trim()
+      }));
+      setModalSalesperson(saved.trim());
+    } else {
+      // Obligatory lock: Open modal and require salesperson identification
+      setIsWelcomeModalOpen(true);
+    }
+  }, []);
+
+  // Security password state for deleting products from catalog/Supabase
+  const [productToDelete, setProductToDelete] = useState<{ id?: string; name: string; preco?: number; codigo?: string } | null>(null);
+  const [deleteProductPassword, setDeleteProductPassword] = useState("");
+  const [showDeleteProductPassword, setShowDeleteProductPassword] = useState(false);
+  const [deleteProductPasswordError, setDeleteProductPasswordError] = useState("");
+  const [isDeletingProduct, setIsDeletingProduct] = useState(false);
+
+  // Fetch all products from Supabase catalog
+  const fetchCatalogFromSupabase = async () => {
+    setIsLoadingCatalog(true);
+    try {
+      const { data, error } = await supabase
+        .from('produtos')
+        .select('*')
+        .order('nome', { ascending: true });
+      if (!error && data) {
+        setAllSupabaseCatalog(data);
+      } else if (error) {
+        console.error('[Supabase] Erro ao carregar catálogo completo:', error);
+      }
+    } catch (err) {
+      console.error('[Supabase] Falha ao consultar catálogo de produtos:', err);
+    } finally {
+      setIsLoadingCatalog(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchCatalogFromSupabase();
+  }, []);
 
   // Debounce effect for search term
   useEffect(() => {
@@ -166,6 +254,57 @@ export default function App() {
 
     return () => clearTimeout(timer);
   }, [searchTerm]);
+
+  // 1. Fetch & list products pulling directly from Supabase 'produtos' table
+  useEffect(() => {
+    let isCurrent = true;
+    const fetchSupabaseProducts = async () => {
+      setIsSearchingSupabase(true);
+      try {
+        let query = supabase
+          .from('produtos')
+          .select('*')
+          .order('nome', { ascending: true });
+
+        const term = debouncedSearchTerm.trim();
+        if (term) {
+          query = query.ilike('nome', `%${term}%`);
+        } else {
+          query = query.limit(50);
+        }
+
+        const { data: results, error } = await query;
+        if (error) {
+          console.error('[Supabase] Erro ao pesquisar produtos:', error);
+          if (isCurrent) {
+            // Fallback locally
+            const fallback = fullCatalog
+              .filter(p => !term || p.name.toLowerCase().includes(term.toLowerCase()))
+              .map(p => ({
+                codigo: Math.floor(100000 + Math.random() * 900000).toString(),
+                nome: p.name,
+                preco: p.price
+              }));
+            setSupabaseProducts(fallback);
+          }
+        } else if (isCurrent && results) {
+          setSupabaseProducts(results);
+        }
+      } catch (err) {
+        console.error('[Supabase] Falha ao consultar tabela produtos:', err);
+      } finally {
+        if (isCurrent) {
+          setIsSearchingSupabase(false);
+        }
+      }
+    };
+
+    fetchSupabaseProducts();
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [debouncedSearchTerm, fullCatalog]);
 
   // Save to localStorage whenever data changes
   useEffect(() => {
@@ -191,6 +330,7 @@ export default function App() {
         setSelectedProduct("");
         setSelectedPrice("");
         setSelectedQuantity("1");
+        setSelectedProductCode("");
         setImportText("");
         setImportError(null);
         setActiveTab('manual');
@@ -232,18 +372,40 @@ export default function App() {
     }
   };
 
-  const handleAddCustomProduct = () => {
-    if (!newProductName.trim()) return;
-    
-    const name = newProductName.trim().toUpperCase();
+  const handleAddCustomProduct = async () => {
+    const name = computedProductName.trim();
+    if (!name) {
+      alert("Preencha os campos para formar o nome do produto.");
+      return;
+    }
     
     // Parse the default price (handling comma as decimal separator)
     const priceValue = parseFloat(newProductPrice.replace('.', '').replace(',', '.') || "0");
     
-    // Check if name already exists in fullCatalog
-    if (fullCatalog.some(p => p.name === name)) {
-      alert("Este produto ou um produto com o mesmo nome já existe no catálogo.");
-      return;
+    setIsSavingCustomProduct(true);
+    setCustomProductSuccess(null);
+
+    const generatedCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // 1. Persist directly to Supabase produtos table
+    try {
+      const { error } = await supabase.from('produtos').insert([{
+        codigo: generatedCode,
+        nome: name,
+        preco: priceValue
+      }]);
+
+      if (error) {
+        console.error('[Supabase] Erro ao salvar novo produto:', error);
+        alert(`Erro ao salvar no Supabase: ${error.message}`);
+      } else {
+        setCustomProductSuccess(`Produto "${name}" salvo com sucesso no Supabase!`);
+        setTimeout(() => setCustomProductSuccess(null), 4000);
+      }
+    } catch (err) {
+      console.error('[Supabase] Erro inesperado ao salvar no Supabase:', err);
+    } finally {
+      setIsSavingCustomProduct(false);
     }
 
     const newProductItem: CatalogItem = {
@@ -251,19 +413,59 @@ export default function App() {
       price: priceValue
     };
 
-    setCustomProducts(prev => [...prev, newProductItem]);
+    setCustomProducts(prev => [...prev.filter(p => p.name !== name), newProductItem]);
     
-    // Persist permanently in source code file types.ts via Server API
+    // Persist in types.ts via Server API
     saveProductToTypesTS(name, priceValue);
 
-    setNewProductName("");
+    // Refresh both Supabase lists
+    await fetchCatalogFromSupabase();
+
+    setNewProdCategoria("");
+    setNewProdProduto("");
+    setNewProdAltura("");
+    setNewProdTamanho("");
+    setNewProdCor("");
     setNewProductPrice("");
   };
 
-  const handleRemoveCustomProduct = async (name: string) => {
-    if (window.confirm(`Tem certeza que deseja excluir o produto "${name}" do catálogo?`)) {
+  const handleRequestDeleteProduct = (id?: string, name?: string, preco?: number, codigo?: string) => {
+    if (!name) return;
+    setProductToDelete({ id, name, preco, codigo });
+    setDeleteProductPassword("");
+    setShowDeleteProductPassword(false);
+    setDeleteProductPasswordError("");
+  };
+
+  const handleConfirmDeleteProductWithPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!productToDelete || !productToDelete.name) return;
+
+    if (deleteProductPassword !== ADMIN_DELETE_PASSWORD) {
+      setDeleteProductPasswordError("Senha incorreta! Não autorizado a excluir produto.");
+      return;
+    }
+
+    const { id, name } = productToDelete;
+    setIsDeletingProduct(true);
+
+    try {
       setCustomProducts(prev => prev.filter(p => p.name !== name));
-      
+
+      // 1. Delete from Supabase produtos table
+      try {
+        if (id && !id.startsWith('custom-')) {
+          const { error } = await supabase.from('produtos').delete().eq('id', id);
+          if (error) console.error('[Supabase] Erro ao deletar por ID:', error);
+        } else {
+          const { error } = await supabase.from('produtos').delete().ilike('nome', name);
+          if (error) console.error('[Supabase] Erro ao deletar por nome:', error);
+        }
+      } catch (err) {
+        console.error('[Supabase] Erro ao remover produto:', err);
+      }
+
+      // 2. Delete from server disk types.ts
       try {
         await fetch('/api/catalog', {
           method: 'DELETE',
@@ -275,26 +477,31 @@ export default function App() {
       } catch (err) {
         console.error("[BelConfort Disk] Erro ao sincronizar remoção no servidor:", err);
       }
+
+      // 3. Refresh catalog
+      await fetchCatalogFromSupabase();
+      setProductToDelete(null);
+      setDeleteProductPassword("");
+      setDeleteProductPasswordError("");
+    } catch (err) {
+      console.error("Erro ao excluir produto:", err);
+    } finally {
+      setIsDeletingProduct(false);
     }
   };
 
-  // Filter products using Fuse.js fuzzy search based on debounced term
-  const filteredProducts = debouncedSearchTerm
-    ? fuse.search(debouncedSearchTerm).map(result => result.item)
-    : fullProductsList;
-
-  const handleSearchSelect = (name: string) => {
-    setSelectedProduct(name);
-    setSearchTerm(name);
-    setDebouncedSearchTerm(name); // Update debounced term immediately on selection
+  const handleSearchSelect = (product: { id?: string; codigo?: string; nome: string; preco: number }) => {
+    setSelectedProduct(product.nome);
+    setSelectedProductCode(product.codigo || "");
+    setSearchTerm(product.nome);
+    setDebouncedSearchTerm(product.nome);
     setIsSearchOpen(false);
     
     // Auto-fill price
-    const product = fullCatalog.find(p => p.name === name);
-    if (product) {
-        setSelectedPrice(product.price.toFixed(2).replace('.', ','));
+    if (product.preco !== undefined && product.preco !== null) {
+      setSelectedPrice(Number(product.preco).toFixed(2).replace('.', ','));
     } else {
-        setSelectedPrice("");
+      setSelectedPrice("");
     }
   };
 
@@ -306,7 +513,7 @@ export default function App() {
     const priceValue = parseFloat(selectedPrice.replace('.', '').replace(',', '.') || "0");
     const quantityValue = parseInt(selectedQuantity) || 1;
     
-    // Auto-save to catalog if it's a new product
+    // Auto-save to catalog and Supabase if it's a new product
     const exists = fullCatalog.some(p => p.name.toUpperCase() === productName.trim().toUpperCase());
     if (!exists) {
       const newProductItem: CatalogItem = {
@@ -317,13 +524,23 @@ export default function App() {
       
       // Auto-save to types.ts on local disk
       saveProductToTypesTS(productName, priceValue);
+
+      // Auto-save directly to Supabase
+      supabase.from('produtos').insert([{
+        codigo: Math.floor(100000 + Math.random() * 900000).toString(),
+        nome: productName,
+        preco: priceValue
+      }]).then(({ error }) => {
+        if (error) console.error('[Supabase] Erro ao cadastrar produto:', error);
+        fetchCatalogFromSupabase();
+      });
     }
 
-    // Generate a pseudo-code (Numeric only - 6 digits)
-    const pseudoCode = Math.floor(100000 + Math.random() * 900000).toString();
+    // Generate a pseudo-code (Numeric only - 6 digits) or use Supabase product code
+    const productCode = selectedProductCode || Math.floor(100000 + Math.random() * 900000).toString();
 
     const newProduct: Product = {
-      code: pseudoCode,
+      code: productCode,
       name: productName,
       price: priceValue,
       quantity: quantityValue,
@@ -340,6 +557,7 @@ export default function App() {
 
     // Reset inputs
     setSelectedProduct("");
+    setSelectedProductCode("");
     setSearchTerm("");
     setDebouncedSearchTerm("");
     setSelectedPrice("");
@@ -497,6 +715,81 @@ export default function App() {
       setImportError({ title: errorTitle, msg: detailedMsg || errorMsg });
     } finally {
       setIsImporting(false);
+    }
+  };
+
+  const handleConfirmWelcomeModal = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const finalSalesperson = modalSalesperson.trim().toUpperCase();
+
+    // 1. Mandatory salesperson check
+    if (!finalSalesperson) {
+      alert("Por favor, informe ou selecione quem está na página para liberar o acesso ao sistema.");
+      return;
+    }
+
+    // Auto-apply and persist salesperson name
+    localStorage.setItem('belconfort_saved_salesperson', finalSalesperson);
+    setData(prev => ({ ...prev, salesperson: finalSalesperson }));
+
+    // 2. If import text was provided, process via Gemini AI
+    if (modalImportText.trim()) {
+      setIsModalImporting(true);
+      setModalImportError(null);
+      try {
+        const result = await parseReceiptFromText(modalImportText, fullProductsList);
+        
+        let updatedProducts = [...data.products];
+        if (result.items && Array.isArray(result.items)) {
+          result.items.forEach((item: { name: string, quantity: number }) => {
+            const systemProduct = fullCatalog.find(p => p.name === item.name);
+            if (systemProduct) {
+              const quantityToAdd = item.quantity || 1;
+              const existingProductIndex = updatedProducts.findIndex(p => p.name === systemProduct.name);
+
+              if (existingProductIndex >= 0) {
+                const existingProduct = updatedProducts[existingProductIndex];
+                updatedProducts[existingProductIndex] = {
+                  ...existingProduct,
+                  quantity: existingProduct.quantity + quantityToAdd
+                };
+              } else {
+                const pseudoCode = Math.floor(100000 + Math.random() * 900000).toString();
+                updatedProducts.push({
+                  code: pseudoCode,
+                  name: systemProduct.name,
+                  price: systemProduct.price,
+                  quantity: quantityToAdd,
+                  warrantyTime: "",
+                  warrantyUnit: "MESES"
+                });
+              }
+            }
+          });
+        }
+
+        setData(prev => ({
+          ...prev,
+          ...result.clientData,
+          salesperson: finalSalesperson,
+          products: updatedProducts,
+        }));
+
+        setModalImportText("");
+        setIsWelcomeModalOpen(false);
+        setActiveTab('manual');
+      } catch (error: any) {
+        console.error(error);
+        setModalImportError({
+          title: "Erro na Inteligência Artificial",
+          msg: error.message || "Não foi possível interpretar os dados colados. Verifique o texto e tente novamente."
+        });
+      } finally {
+        setIsModalImporting(false);
+      }
+    } else {
+      // Just close the modal and start with the salesperson defined
+      setIsWelcomeModalOpen(false);
     }
   };
 
@@ -683,7 +976,47 @@ export default function App() {
   };
 
   const handleGeneratePDF = async () => {
-    await generateReceiptPDF(getDataForExport());
+    setIsSavingSupabase(true);
+    try {
+      // 1. Criar novo registro na tabela comprovantes (salvando o nome do cliente e valor total)
+      const clientName = data.name && data.name.trim() ? data.name.trim() : 'CLIENTE NÃO INFORMADO';
+      const { data: comprovante, error: compError } = await supabase
+        .from('comprovantes')
+        .insert([{
+          cliente_nome: clientName,
+          total: totalValue
+        }])
+        .select()
+        .single();
+
+      if (compError) {
+        console.error('[Supabase] Erro ao salvar comprovante:', compError);
+      } else if (comprovante?.id && data.products.length > 0) {
+        // 2. Pegar o ID gerado e salvar os produtos do carrinho na tabela itens_comprovante vinculados à venda
+        const itensToInsert = data.products.map(p => ({
+          comprovante_id: comprovante.id,
+          nome_produto: p.name,
+          quantidade: p.quantity,
+          preco: p.price
+        }));
+
+        const { error: itemsError } = await supabase
+          .from('itens_comprovante')
+          .insert(itensToInsert);
+
+        if (itemsError) {
+          console.error('[Supabase] Erro ao salvar itens do comprovante no Supabase:', itemsError);
+        } else {
+          console.log('[Supabase] Comprovante e itens registrados com sucesso! ID:', comprovante.id);
+        }
+      }
+    } catch (err) {
+      console.error('[Supabase] Erro inesperado ao salvar no Supabase:', err);
+    } finally {
+      setIsSavingSupabase(false);
+      // Gerar PDF
+      await generateReceiptPDF(getDataForExport());
+    }
   };
 
   const handleSendEmail = async () => {
@@ -765,8 +1098,21 @@ export default function App() {
                <span>Camas e Móveis</span>
             </div>
           </div>
-          <div className="flex items-center gap-4">
-             <div className="hidden sm:block text-right">
+          <div className="flex items-center gap-3">
+             <button
+               type="button"
+               onClick={() => {
+                 setModalSalesperson(data.salesperson || localStorage.getItem('belconfort_saved_salesperson') || '');
+                 setIsWelcomeModalOpen(true);
+               }}
+               className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/20 text-xs font-semibold transition-all backdrop-blur-sm shadow-sm"
+               title="Abrir Importação Inteligente ou alterar Vendedor"
+             >
+               <Sparkles className="w-3.5 h-3.5 text-yellow-300" />
+               <span className="hidden sm:inline">Importação IA & Vendedor:</span>
+               <span className="font-bold text-yellow-200 uppercase">{data.salesperson || 'Identificar'}</span>
+             </button>
+             <div className="hidden md:block text-right">
                 <p className="text-xs text-blue-200 font-medium">Ecosistema</p>
                 <p className="text-xs text-white font-bold">Vendas & Gestão</p>
              </div>
@@ -782,14 +1128,14 @@ export default function App() {
           <div className="lg:col-span-5 space-y-6">
             
             {/* Tab Navigation */}
-            <div className="grid grid-cols-2 sm:flex p-1 gap-1 bg-gray-900 rounded-xl border border-gray-800">
+            <div className="grid grid-cols-3 p-1 gap-1 bg-gray-900 rounded-xl border border-gray-800">
                 <button
                 onClick={() => setActiveTab('manual')}
                 className={`flex items-center justify-center gap-2 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 ${
                     activeTab === 'manual'
                     ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
                     : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
-                } sm:flex-1`}
+                } flex-1`}
                 >
                 <FileText className="w-4 h-4" />
                 Manual
@@ -800,21 +1146,10 @@ export default function App() {
                     activeTab === 'import'
                     ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
                     : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
-                } sm:flex-1`}
+                } flex-1`}
                 >
                 <Sparkles className="w-4 h-4" />
                 Importar
-                </button>
-                <button
-                onClick={() => setActiveTab('team')}
-                className={`flex items-center justify-center gap-2 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 ${
-                    activeTab === 'team'
-                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
-                    : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
-                } sm:flex-1`}
-                >
-                <Users className="w-4 h-4" />
-                Equipe
                 </button>
                 <button
                 onClick={() => setActiveTab('catalog')}
@@ -822,7 +1157,7 @@ export default function App() {
                     activeTab === 'catalog'
                     ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
                     : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
-                } sm:flex-1`}
+                } flex-1`}
                 >
                 <Barcode className="w-4 h-4" />
                 Catálogo
@@ -888,127 +1223,321 @@ export default function App() {
                   </button>
               </div>
             )}
-
-            {/* Team Management Section */}
-            {activeTab === 'team' && (
-              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-300">
-                 <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                      <span className="w-1 h-6 bg-yellow-500 rounded-full"></span>
-                      Gerenciar Equipe
-                    </h2>
-                    <span className="text-xs text-gray-500 uppercase tracking-wider">Vendedores</span>
-                  </div>
-
-                  <div className="bg-gray-800/50 p-4 rounded-xl border border-gray-700/50 mb-6">
-                    <div className="flex gap-2 items-end">
-                      <Input
-                        label="Nome do Vendedor"
-                        value={newSalespersonName}
-                        onChange={(e) => setNewSalespersonName(e.target.value)}
-                        placeholder="Ex: JOÃO"
-                        className="uppercase"
-                        icon={<UserPlus className="w-4 h-4"/>}
-                      />
-                      <button
-                        onClick={handleAddSalesperson}
-                        disabled={!newSalespersonName.trim()}
-                        className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white p-3.5 rounded-lg transition-colors"
-                      >
-                        <Plus className="w-5 h-5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <h3 className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-2">Vendedores Cadastrados</h3>
-                    {salespeople.map((person) => (
-                      <div key={person} className="flex items-center justify-between bg-gray-800 p-3 rounded-lg border border-gray-700">
-                         <div className="flex items-center gap-3">
-                           <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-xs font-bold text-gray-300">
-                             {person.substring(0,2)}
-                           </div>
-                           <span className="text-sm font-medium text-gray-200">{person}</span>
-                         </div>
-                         <button 
-                           onClick={() => handleRemoveSalesperson(person)}
-                           className="p-2 text-gray-500 hover:text-red-400 hover:bg-red-400/10 rounded transition-colors"
-                         >
-                           <Trash2 className="w-4 h-4" />
-                         </button>
-                      </div>
-                    ))}
-                    {salespeople.length === 0 && (
-                      <p className="text-center text-gray-500 text-sm py-4">Nenhum vendedor cadastrado.</p>
-                    )}
-                  </div>
-              </div>
-            )}
             
              {/* Catalog Management Section */}
              {activeTab === 'catalog' && (
-              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-300">
-                 <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                      <span className="w-1 h-6 bg-blue-500 rounded-full"></span>
-                      Cadastrar Novo Produto
-                    </h2>
-                    <span className="text-xs text-gray-500 uppercase tracking-wider">Catálogo</span>
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-6">
+                 <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                        <span className="w-1 h-6 bg-blue-500 rounded-full"></span>
+                        Cadastrar Novo Produto
+                      </h2>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        Cadastre e salve produtos diretamente no banco de dados Supabase
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="flex items-center gap-1.5 text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 px-2.5 py-1 rounded-full text-[11px] font-bold">
+                        <Database className="w-3.5 h-3.5" />
+                        Supabase Conectado
+                      </span>
+                    </div>
                   </div>
 
-                  <div className="bg-gray-800/50 p-4 rounded-xl border border-gray-700/50 mb-6 space-y-4">
-                    <Input
-                      label="Nome do Produto"
-                      value={newProductName}
-                      onChange={(e) => setNewProductName(e.target.value)}
-                      placeholder="Ex: COLCHÃO ECO PREMIUM 22CM CASAL MARROM"
-                      className="uppercase"
-                      icon={<Barcode className="w-4 h-4"/>}
-                    />
-                    <div className="flex gap-2 items-end">
+                  {/* Feedback de Sucesso */}
+                  {customProductSuccess && (
+                    <div className="flex items-center gap-2 p-3 bg-emerald-950/80 border border-emerald-500/50 rounded-xl text-emerald-300 text-xs font-semibold animate-in fade-in slide-in-from-top-1 duration-200">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                      <span>{customProductSuccess}</span>
+                    </div>
+                  )}
+
+                  <div className="bg-gray-800/50 p-5 rounded-2xl border border-gray-700/50 space-y-4">
+                    {/* Datalists para sugestões rápidas */}
+                    <datalist id="list-categorias">
+                      <option value="ARMÁRIO / COZINHA" />
+                      <option value="BASE" />
+                      <option value="BICAMA" />
+                      <option value="CABECEIRA" />
+                      <option value="COLCHÃO" />
+                      <option value="FOGÃO" />
+                      <option value="TRAVESSEIRO" />
+                      <option value="UNIBOX" />
+                    </datalist>
+
+                    <datalist id="list-alturas">
+                      <option value="22CM" />
+                      <option value="24CM" />
+                      <option value="26CM" />
+                      <option value="28CM" />
+                      <option value="30CM" />
+                      <option value="32CM" />
+                      <option value="34CM" />
+                      <option value="62CM" />
+                      <option value="7CM" />
+                    </datalist>
+
+                    <datalist id="list-tamanhos">
+                      <option value="CASAL" />
+                      <option value="SOLTEIRO" />
+                      <option value="QUEEN" />
+                      <option value="KING" />
+                      <option value="VIÚVA" />
+                      <option value="SUPER KING" />
+                      <option value="52X78" />
+                      <option value="PADRÃO" />
+                    </datalist>
+
+                    <datalist id="list-cores">
+                      <option value="MARROM" />
+                      <option value="CINZA" />
+                      <option value="BEGE" />
+                      <option value="PRETO" />
+                      <option value="BRANCO" />
+                      <option value="CHUMBO" />
+                      <option value="AZUL" />
+                      <option value="OFF WHITE" />
+                    </datalist>
+
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-[11px] font-bold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <Layers className="w-3.5 h-3.5 text-blue-400" />
+                        Composição do Nome do Produto (Sequência Obrigatória)
+                      </span>
+                    </div>
+
+                    {/* Grid com os 5 inputs na sequência solicitada */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                      {/* 1. CATEGORIA */}
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-blue-400 mb-1 flex items-center gap-1">
+                          <span className="w-4 h-4 rounded-full bg-blue-500/20 text-blue-300 flex items-center justify-center text-[9px] font-mono">1</span>
+                          Categoria
+                        </label>
+                        <Input
+                          label="1. Categoria"
+                          list="list-categorias"
+                          value={newProdCategoria}
+                          onChange={(e) => setNewProdCategoria(e.target.value)}
+                          placeholder="EX: COLCHÃO"
+                          className="uppercase text-xs"
+                          icon={<Building2 className="w-4 h-4" />}
+                        />
+                      </div>
+
+                      {/* 2. PRODUTO */}
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-blue-400 mb-1 flex items-center gap-1">
+                          <span className="w-4 h-4 rounded-full bg-blue-500/20 text-blue-300 flex items-center justify-center text-[9px] font-mono">2</span>
+                          Produto
+                        </label>
+                        <Input
+                          label="2. Produto"
+                          value={newProdProduto}
+                          onChange={(e) => setNewProdProduto(e.target.value)}
+                          placeholder="EX: ECO PREMIUM"
+                          className="uppercase text-xs"
+                          icon={<ShoppingBag className="w-4 h-4" />}
+                        />
+                      </div>
+
+                      {/* 3. ALTURA */}
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-blue-400 mb-1 flex items-center gap-1">
+                          <span className="w-4 h-4 rounded-full bg-blue-500/20 text-blue-300 flex items-center justify-center text-[9px] font-mono">3</span>
+                          Altura
+                        </label>
+                        <Input
+                          label="3. Altura"
+                          list="list-alturas"
+                          value={newProdAltura}
+                          onChange={(e) => setNewProdAltura(e.target.value)}
+                          placeholder="EX: 22CM"
+                          className="uppercase text-xs"
+                          icon={<Hash className="w-4 h-4" />}
+                        />
+                      </div>
+
+                      {/* 4. TAMANHO */}
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-blue-400 mb-1 flex items-center gap-1">
+                          <span className="w-4 h-4 rounded-full bg-blue-500/20 text-blue-300 flex items-center justify-center text-[9px] font-mono">4</span>
+                          Tamanho
+                        </label>
+                        <Input
+                          label="4. Tamanho"
+                          list="list-tamanhos"
+                          value={newProdTamanho}
+                          onChange={(e) => setNewProdTamanho(e.target.value)}
+                          placeholder="EX: CASAL"
+                          className="uppercase text-xs"
+                          icon={<Maximize2 className="w-4 h-4" />}
+                        />
+                      </div>
+
+                      {/* 5. COR */}
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-blue-400 mb-1 flex items-center gap-1">
+                          <span className="w-4 h-4 rounded-full bg-blue-500/20 text-blue-300 flex items-center justify-center text-[9px] font-mono">5</span>
+                          Cor
+                        </label>
+                        <Input
+                          label="5. Cor"
+                          list="list-cores"
+                          value={newProdCor}
+                          onChange={(e) => setNewProdCor(e.target.value)}
+                          placeholder="EX: MARROM"
+                          className="uppercase text-xs"
+                          icon={<Palette className="w-4 h-4" />}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Preview em Tempo Real do Nome Gerado */}
+                    <div className="bg-gray-950/80 border border-gray-700/80 rounded-xl p-3.5 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
+                          <Barcode className="w-3.5 h-3.5 text-emerald-400" />
+                          Nome Final Formado na Sequência:
+                        </span>
+                        {computedProductName && (
+                          <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 px-2 py-0.5 rounded-full font-bold">
+                            Pronto para Salvar
+                          </span>
+                        )}
+                      </div>
+                      <div className="min-h-[28px] flex items-center">
+                        {computedProductName ? (
+                          <p className="text-sm font-bold text-emerald-300 uppercase tracking-wide break-words font-mono">
+                            {computedProductName}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-gray-500 italic">
+                            Preencha os campos acima para gerar o nome (Ex: COLCHÃO ECO PREMIUM 22CM CASAL MARROM)
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Preço e Botão de Salvar */}
+                    <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-end pt-1">
                       <div className="flex-1">
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-300 mb-1">
+                          Preço Padrão (R$)
+                        </label>
                         <Input
                           label="Preço Padrão (R$)"
                           value={newProductPrice}
                           onChange={(e) => setNewProductPrice(e.target.value)}
-                          placeholder="Ex: 1200,00"
+                          placeholder="EX: 1200,00"
                           icon={<Tag className="w-4 h-4"/>}
                         />
                       </div>
                       <button
                         onClick={handleAddCustomProduct}
-                        disabled={!newProductName.trim() || !newProductPrice.trim()}
-                        className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white p-3.5 rounded-lg transition-colors flex-shrink-0"
+                        disabled={!computedProductName || !newProductPrice.trim() || isSavingCustomProduct}
+                        className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-6 py-3.5 rounded-lg transition-all flex items-center justify-center gap-2 font-semibold text-xs uppercase shadow-lg shadow-blue-900/30 active:scale-95 sm:min-w-[200px]"
                       >
-                        <Plus className="w-5 h-5" />
+                        {isSavingCustomProduct ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Salvando no Supabase...
+                          </>
+                        ) : (
+                          <>
+                            <Plus className="w-4 h-4" />
+                            Salvar no Supabase
+                          </>
+                        )}
                       </button>
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <h3 className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-2">Produtos no Seu Catálogo</h3>
+                  <div className="space-y-3 pt-2">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-xs text-gray-400 font-bold uppercase tracking-wider">Produtos no Supabase</h3>
+                        <span className="bg-blue-500/20 text-blue-300 border border-blue-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                          {allSupabaseCatalog.length > 0 ? allSupabaseCatalog.length : customProducts.length} itens
+                        </span>
+                      </div>
+                      
+                      <button
+                        onClick={() => fetchCatalogFromSupabase()}
+                        disabled={isLoadingCatalog}
+                        className="flex items-center gap-1.5 px-2.5 py-1 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                        title="Atualizar lista do Supabase"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isLoadingCatalog ? 'animate-spin text-blue-400' : ''}`} />
+                        Atualizar
+                      </button>
+                    </div>
+
+                    {/* Search bar inside catalog tab */}
+                    <div className="relative">
+                      <Search className="w-4 h-4 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={catalogSearchTerm}
+                        onChange={(e) => setCatalogSearchTerm(e.target.value)}
+                        placeholder="Filtrar produtos por nome ou código..."
+                        className="w-full bg-gray-800/80 border border-gray-700 focus:border-blue-500 text-gray-100 text-xs rounded-xl pl-9 pr-3 py-2 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all uppercase"
+                      />
+                    </div>
                     
                     <div className="max-h-80 overflow-y-auto space-y-2 pr-1 scrollbar-thin scrollbar-thumb-gray-800 scrollbar-track-transparent">
-                      {customProducts.map((product) => (
-                        <div key={product.name} className="flex items-center justify-between bg-gray-800 p-3 rounded-lg border border-gray-700">
-                           <div className="flex-1 min-w-0 pr-3">
-                             <p className="text-[9px] text-gray-400 font-mono tracking-wider font-bold">PRODUTO PERSONALIZADO</p>
-                             <span className="text-sm font-medium text-gray-200 block truncate uppercase">{product.name}</span>
-                             <span className="text-xs text-green-400 font-bold">
-                               {product.price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                             </span>
-                           </div>
-                           <button 
-                             onClick={() => handleRemoveCustomProduct(product.name)}
-                             className="p-2 text-gray-500 hover:text-red-400 hover:bg-red-400/10 rounded transition-colors flex-shrink-0"
-                           >
-                             <Trash2 className="w-4 h-4" />
-                           </button>
+                      {isLoadingCatalog && allSupabaseCatalog.length === 0 ? (
+                        <div className="flex items-center justify-center py-8 text-gray-400 text-xs gap-2">
+                          <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
+                          <span>Carregando produtos do Supabase...</span>
                         </div>
-                      ))}
-                      
-                      {customProducts.length === 0 && (
-                        <p className="text-center text-gray-500 text-sm py-4 text-gray-400">Nenhum produto personalizado cadastrado. Adicione um novo acima!</p>
+                      ) : (
+                        (() => {
+                          const displayList = allSupabaseCatalog.length > 0 
+                            ? allSupabaseCatalog.filter(p => 
+                                !catalogSearchTerm.trim() || 
+                                p.nome.toLowerCase().includes(catalogSearchTerm.toLowerCase()) || 
+                                (p.codigo && p.codigo.includes(catalogSearchTerm))
+                              )
+                            : customProducts
+                                .filter(p => !catalogSearchTerm.trim() || p.name.toLowerCase().includes(catalogSearchTerm.toLowerCase()))
+                                .map((p, idx) => ({ id: `custom-${idx}`, codigo: `PROD-${idx}`, nome: p.name, preco: p.price }));
+
+                          if (displayList.length === 0) {
+                            return (
+                              <p className="text-center text-gray-500 text-xs py-6">
+                                {catalogSearchTerm ? 'Nenhum produto encontrado com este filtro.' : 'Nenhum produto cadastrado no catálogo. Adicione um novo acima!'}
+                              </p>
+                            );
+                          }
+
+                          return displayList.map((product) => (
+                            <div key={product.id || product.nome} className="flex items-center justify-between bg-gray-800/80 hover:bg-gray-800 p-3 rounded-xl border border-gray-700/80 transition-colors">
+                               <div className="flex-1 min-w-0 pr-3">
+                                 <div className="flex items-center gap-2 mb-0.5">
+                                   {product.codigo && (
+                                     <span className="text-[10px] bg-gray-900 border border-gray-700 text-gray-400 font-mono px-1.5 py-0.5 rounded">
+                                       #{product.codigo}
+                                     </span>
+                                   )}
+                                   <span className="text-[9px] text-emerald-400 font-mono tracking-wider font-bold">SUPABASE DB</span>
+                                 </div>
+                                 <span className="text-xs font-semibold text-gray-100 block truncate uppercase">{product.nome}</span>
+                                 <span className="text-xs text-green-400 font-bold">
+                                   {Number(product.preco || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                 </span>
+                               </div>
+                               <button 
+                                 onClick={() => handleRequestDeleteProduct(product.id, product.nome, product.preco, product.codigo)}
+                                 className="p-2 text-gray-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors flex-shrink-0"
+                                 title="Excluir produto do Supabase (Requer senha)"
+                               >
+                                 <Trash2 className="w-4 h-4" />
+                                </button>
+                            </div>
+                          ));
+                        })()
                       )}
                     </div>
                   </div>
@@ -1047,14 +1576,31 @@ export default function App() {
                         
                         {isSearchOpen && (
                             <div className="absolute z-20 w-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl max-h-60 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent">
-                                {filteredProducts.length > 0 ? (
-                                    filteredProducts.map((product) => (
+                                {isSearchingSupabase ? (
+                                    <div className="flex items-center justify-center py-4 text-xs text-gray-400 gap-2">
+                                        <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
+                                        <span>Buscando produtos no Supabase...</span>
+                                    </div>
+                                ) : supabaseProducts.length > 0 ? (
+                                    supabaseProducts.map((product, idx) => (
                                         <button
-                                            key={product}
-                                            className="w-full text-left px-4 py-3 text-sm text-gray-200 hover:bg-gray-700 transition-colors uppercase border-b border-gray-700/50 last:border-0"
+                                            key={product.id || `${product.nome}-${idx}`}
+                                            className="w-full text-left px-4 py-3 text-sm text-gray-200 hover:bg-gray-700 transition-colors uppercase border-b border-gray-700/50 last:border-0 flex items-center justify-between group"
                                             onClick={() => handleSearchSelect(product)}
                                         >
-                                            {product}
+                                            <div className="flex flex-col min-w-0 pr-2">
+                                                <span className="font-medium text-xs text-gray-200 group-hover:text-white truncate">
+                                                    {product.nome}
+                                                </span>
+                                                {product.codigo && (
+                                                    <span className="text-[10px] text-gray-400 font-mono">
+                                                        Cód: {product.codigo}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <span className="text-xs font-bold text-green-400 group-hover:text-green-300 flex-shrink-0">
+                                                {Number(product.preco || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                            </span>
                                         </button>
                                     ))
                                 ) : (
@@ -1063,7 +1609,7 @@ export default function App() {
                                         <button 
                                             type="button"
                                             onClick={() => {
-                                                setNewProductName(searchTerm);
+                                                setNewProdProduto(searchTerm);
                                                 setActiveTab('catalog');
                                             }}
                                             className="text-xs font-semibold text-blue-400 hover:text-blue-300 flex items-center justify-center gap-1 bg-blue-500/10 hover:bg-blue-500/20 px-3 py-1.5 rounded-full border border-blue-500/20 transition-all uppercase"
@@ -1488,11 +2034,29 @@ export default function App() {
                   E-mail
                 </button>
                 <button
-                  onClick={handleGeneratePDF}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors shadow-lg shadow-blue-900/20"
+                  onClick={() => setIsHistoryModalOpen(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors shadow-lg shadow-purple-900/20"
+                  title="Ver histórico de comprovantes emitidos no Supabase"
                 >
-                  <Download className="w-4 h-4" />
-                  Gerar PDF
+                  <History className="w-4 h-4" />
+                  Histórico
+                </button>
+                <button
+                  onClick={handleGeneratePDF}
+                  disabled={isSavingSupabase}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-75 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors shadow-lg shadow-blue-900/20"
+                >
+                  {isSavingSupabase ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Salvando...
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-4 h-4" />
+                      Gerar PDF
+                    </>
+                  )}
                 </button>
               </div>
             </div>
@@ -1729,6 +2293,307 @@ export default function App() {
           </div>
         </div>
       </main>
+
+      {/* Histórico de Comprovantes Modal */}
+      <ReceiptHistoryModal
+        isOpen={isHistoryModalOpen}
+        onClose={() => setIsHistoryModalOpen(false)}
+        onLoadReceipt={(loadedData) => {
+          setData(prev => ({
+            ...prev,
+            ...loadedData
+          }));
+        }}
+      />
+
+      {/* Modal de Confirmação com Senha para Excluir Produto do Catálogo */}
+      {productToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-150">
+          <div className="bg-gray-900 border border-red-500/40 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-400 flex-shrink-0">
+                <ShieldAlert className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">Autorização Necessária</h3>
+                <p className="text-xs text-gray-400">
+                  Informe a senha administrativa para excluir este produto do catálogo.
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-gray-950/80 border border-gray-800 rounded-xl p-3 text-xs space-y-1">
+              {productToDelete.codigo && (
+                <p className="text-gray-400">
+                  <span className="font-semibold text-gray-300">Código:</span>{' '}
+                  <span className="font-mono text-gray-200">#{productToDelete.codigo}</span>
+                </p>
+              )}
+              <p className="text-gray-400">
+                <span className="font-semibold text-gray-300">Produto:</span>{' '}
+                <span className="text-gray-100 font-bold uppercase">{productToDelete.name}</span>
+              </p>
+              {productToDelete.preco !== undefined && (
+                <p className="text-gray-400">
+                  <span className="font-semibold text-gray-300">Preço Padrão:</span>{' '}
+                  <span className="text-green-400 font-bold">
+                    {Number(productToDelete.preco).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  </span>
+                </p>
+              )}
+            </div>
+
+            <form onSubmit={handleConfirmDeleteProductWithPassword} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-gray-300 flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5 text-purple-400" />
+                  Senha de Segurança
+                </label>
+                <div className="relative">
+                  <input
+                    type={showDeleteProductPassword ? 'text' : 'password'}
+                    value={deleteProductPassword}
+                    onChange={(e) => {
+                      setDeleteProductPassword(e.target.value);
+                      if (deleteProductPasswordError) setDeleteProductPasswordError('');
+                    }}
+                    placeholder="Digite a senha de segurança..."
+                    autoFocus
+                    className="w-full bg-gray-950 border border-gray-700 focus:border-red-500 text-gray-100 text-sm rounded-xl pl-3 pr-10 py-2.5 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500/20 transition-all font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowDeleteProductPassword(!showDeleteProductPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200"
+                  >
+                    {showDeleteProductPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                {deleteProductPasswordError && (
+                  <p className="text-xs text-red-400 font-medium flex items-center gap-1 mt-1">
+                    <AlertTriangle className="w-3.5 h-3.5" />
+                    {deleteProductPasswordError}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProductToDelete(null);
+                    setDeleteProductPassword('');
+                    setDeleteProductPasswordError('');
+                  }}
+                  disabled={isDeletingProduct}
+                  className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-xl text-xs font-semibold transition-colors disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={!deleteProductPassword || isDeletingProduct}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-colors shadow-lg shadow-red-900/30 flex items-center gap-1.5"
+                >
+                  {isDeletingProduct ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Excluindo...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Confirmar Exclusão
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Boas-Vindas / Importação Inteligente & Identificação Obrigatória do Vendedor */}
+      {isWelcomeModalOpen && (
+        <div className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
+          <div className="bg-gray-900 border border-blue-500/50 rounded-3xl max-w-xl w-full p-6 sm:p-8 shadow-2xl shadow-blue-950/90 relative my-6 text-left ring-1 ring-blue-500/30">
+            
+            {/* Botão de Fechar (Apenas permitido se já houver um vendedor identificado no sistema) */}
+            {data.salesperson?.trim() && (
+              <button 
+                type="button"
+                onClick={() => setIsWelcomeModalOpen(false)}
+                className="absolute top-5 right-5 text-gray-400 hover:text-white bg-gray-800/80 hover:bg-gray-700 p-2 rounded-full transition-colors"
+                title="Fechar"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+
+            {/* Cabeçalho do Modal */}
+            <div className="flex items-start gap-3.5 mb-6 pr-6">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/30 flex-shrink-0">
+                <Sparkles className="w-6 h-6 animate-pulse" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold tracking-widest text-blue-400 uppercase bg-blue-500/10 px-2.5 py-0.5 rounded-full border border-blue-500/20 flex items-center gap-1">
+                    <Lock className="w-3 h-3 text-blue-400" />
+                    Identificação Obrigatória
+                  </span>
+                </div>
+                <h2 className="text-xl font-bold text-white mt-1">Identifique-se para Acessar</h2>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Informe o seu nome para liberar o painel de vendas e carregar o atendimento.
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handleConfirmWelcomeModal} className="space-y-5">
+              
+              {/* 1. Nome do Vendedor / Atendente (OBRIGATÓRIO) */}
+              <div className="bg-gray-800/60 p-4 rounded-2xl border border-blue-500/30 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-gray-200 uppercase tracking-wider flex items-center gap-1.5">
+                    <UserCheck className="w-4 h-4 text-blue-400" />
+                    Quem está na página? <span className="text-red-400 font-bold">*</span>
+                  </label>
+                  {modalSalesperson.trim() ? (
+                    <span className="text-[10px] text-emerald-400 font-mono font-bold bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-500/30">
+                      ✓ {modalSalesperson.toUpperCase()}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-amber-400 font-mono font-bold bg-amber-950/40 px-2 py-0.5 rounded border border-amber-500/30">
+                      Campo Obrigatório
+                    </span>
+                  )}
+                </div>
+
+                <Input
+                  label="Nome do Vendedor"
+                  value={modalSalesperson}
+                  onChange={(e) => setModalSalesperson(e.target.value.toUpperCase())}
+                  placeholder="DIGITE SEU NOME OU ESCOLHA ABAIXO"
+                  className="uppercase font-semibold text-sm"
+                  icon={<User className="w-4 h-4 text-blue-400" />}
+                  autoFocus
+                />
+
+                {/* Chips rápidos de vendedores */}
+                <div>
+                  <p className="text-[10px] text-gray-400 uppercase font-medium mb-1.5">Sugestões rápidas:</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {salespeople.map((name) => {
+                      const isSelected = modalSalesperson.toUpperCase() === name.toUpperCase();
+                      return (
+                        <button
+                          key={name}
+                          type="button"
+                          onClick={() => setModalSalesperson(name)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold uppercase transition-all duration-150 border ${
+                            isSelected
+                              ? 'bg-blue-600 text-white border-blue-400 shadow-md shadow-blue-900/40 scale-105'
+                              : 'bg-gray-900/90 text-gray-300 border-gray-700 hover:border-gray-500 hover:text-white'
+                          }`}
+                        >
+                          {name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. Importação Inteligente (IA) - Opcional */}
+              <div className="bg-gray-800/60 p-4 rounded-2xl border border-gray-700/60 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-gray-200 uppercase tracking-wider flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-indigo-400" />
+                    Importação Inteligente (WhatsApp / Texto) <span className="text-[10px] text-gray-400 lowercase font-normal">(opcional)</span>
+                  </label>
+                  <span className="text-[10px] font-mono text-indigo-400 bg-indigo-950/60 border border-indigo-500/30 px-2 py-0.5 rounded-full font-bold">
+                    IA Gemini
+                  </span>
+                </div>
+
+                <p className="text-[11px] text-gray-400 leading-relaxed">
+                  Cole abaixo o texto do pedido copiado do WhatsApp para preencher o cliente e itens automaticamente:
+                </p>
+
+                <textarea
+                  value={modalImportText}
+                  onChange={(e) => setModalImportText(e.target.value)}
+                  placeholder={"Exemplo:\nCliente: Mariana Souza\nEndereço: Rua das Flores, 123 - Centro\nTelefone: (11) 98765-4321\nProdutos: 1 COLCHÃO ECO PREMIUM 22CM CASAL MARROM e 2 TRAVESSEIRO FLOCOS\nPagamento: PIX"}
+                  rows={3}
+                  className="w-full bg-gray-950/90 border border-gray-700 focus:border-indigo-500 text-gray-100 text-xs rounded-xl p-3 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 font-mono transition-all resize-none"
+                />
+
+                {modalImportError && (
+                  <div className="p-3 bg-red-950/50 border border-red-500/30 rounded-xl text-xs text-red-300 space-y-0.5">
+                    <p className="font-bold flex items-center gap-1">
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      {modalImportError.title}
+                    </p>
+                    <p className="text-[11px] text-red-200">{modalImportError.msg}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Botões de Ação */}
+              <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                {modalImportText.trim() ? (
+                  <button
+                    type="submit"
+                    disabled={!modalSalesperson.trim() || isModalImporting}
+                    className="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white py-3.5 px-5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all shadow-lg shadow-blue-900/40 flex items-center justify-center gap-2 active:scale-98"
+                  >
+                    {isModalImporting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Processando com IA...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4" />
+                        Liberar com IA & Iniciar
+                      </>
+                    )}
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    disabled={!modalSalesperson.trim()}
+                    className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white py-3.5 px-5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all shadow-lg shadow-blue-900/40 flex items-center justify-center gap-2 active:scale-98"
+                  >
+                    <UserCheck className="w-4 h-4" />
+                    {modalSalesperson.trim() ? `Liberar Acesso como ${modalSalesperson.toUpperCase()}` : 'Informe seu Nome para Liberar Acesso'}
+                  </button>
+                )}
+
+                {data.salesperson?.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => setIsWelcomeModalOpen(false)}
+                    className="px-4 py-3 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-xl text-xs font-semibold uppercase transition-colors text-center"
+                  >
+                    Cancelar
+                  </button>
+                )}
+              </div>
+
+              {!modalSalesperson.trim() && (
+                <p className="text-[11px] text-center text-amber-400/90 font-medium">
+                  ⚠️ O acesso ao sistema só será liberado após digitar ou selecionar seu nome.
+                </p>
+              )}
+
+            </form>
+
+          </div>
+        </div>
+      )}
     </div>
   );
 }
