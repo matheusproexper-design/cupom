@@ -1089,40 +1089,40 @@ export default function App() {
     <div className="min-h-screen bg-gray-950 text-gray-100 font-sans selection:bg-blue-500 selection:text-white pb-20">
       
       <header className="border-b border-gray-800 bg-[#0047AB] shadow-lg sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+        <div className="w-full max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-16 sm:h-20 flex items-center justify-between">
           <div className="flex flex-col">
             <div className="flex items-center gap-2">
-               <h1 className="text-3xl font-serif font-bold tracking-tight text-white drop-shadow-md">BelConfort</h1>
+               <h1 className="text-2xl sm:text-3xl font-serif font-bold tracking-tight text-white drop-shadow-md">BelConfort</h1>
             </div>
-            <div className="flex items-center gap-3 text-blue-100 text-[10px] tracking-[0.2em] font-medium uppercase mt-[-4px]">
+            <div className="flex items-center gap-3 text-blue-100 text-[9px] sm:text-[10px] tracking-[0.2em] font-medium uppercase mt-[-2px] sm:mt-[-4px]">
                <span>Camas e Móveis</span>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
              <button
                type="button"
                onClick={() => {
                  setModalSalesperson(data.salesperson || localStorage.getItem('belconfort_saved_salesperson') || '');
                  setIsWelcomeModalOpen(true);
                }}
-               className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/20 text-xs font-semibold transition-all backdrop-blur-sm shadow-sm"
+               className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/20 text-xs font-semibold transition-all backdrop-blur-sm shadow-sm"
                title="Abrir Importação Inteligente ou alterar Vendedor"
              >
-               <Sparkles className="w-3.5 h-3.5 text-yellow-300" />
-               <span className="hidden sm:inline">Importação IA & Vendedor:</span>
-               <span className="font-bold text-yellow-200 uppercase">{data.salesperson || 'Identificar'}</span>
+               <Sparkles className="w-3.5 h-3.5 text-yellow-300 flex-shrink-0" />
+               <span className="hidden md:inline">Importação IA & Vendedor:</span>
+               <span className="font-bold text-yellow-200 uppercase max-w-[100px] sm:max-w-none truncate">{data.salesperson || 'Identificar'}</span>
              </button>
              <div className="hidden md:block text-right">
                 <p className="text-xs text-blue-200 font-medium">Ecosistema</p>
                 <p className="text-xs text-white font-bold">Vendas & Gestão</p>
              </div>
-             <span className="text-[10px] font-medium px-2 py-1 bg-white/10 rounded-full text-white border border-white/20">v1.6.1</span>
+             <span className="text-[10px] font-medium px-2 py-0.5 sm:py-1 bg-white/10 rounded-full text-white border border-white/20">v1.6.1</span>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+      <main className="w-full max-w-7xl mx-auto px-2 sm:px-6 lg:px-8 py-3 sm:py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-8">
           
           {/* Left Column: Form */}
           <div className="lg:col-span-5 space-y-6">
@@ -1853,17 +1853,17 @@ export default function App() {
                 </div>
                 </div>
 
-                <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-300">
-                <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                    <span className="w-1 h-6 bg-blue-500 rounded-full"></span>
+                <div className="bg-gray-900 border border-gray-800 rounded-xl sm:rounded-2xl p-3.5 sm:p-6 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <div className="flex items-center justify-between mb-4 sm:mb-6">
+                    <h2 className="text-base sm:text-lg font-semibold text-white flex items-center gap-2">
+                    <span className="w-1 h-5 sm:h-6 bg-blue-500 rounded-full"></span>
                     Dados do Cliente
                     </h2>
-                    <span className="text-xs text-gray-500 uppercase tracking-wider">Formulário</span>
+                    <span className="text-[10px] sm:text-xs text-gray-500 uppercase tracking-wider">Formulário</span>
                 </div>
                 
-                <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-3 sm:space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                         <Input 
                             label="Código da Venda" 
                             name="saleCode"
@@ -1881,7 +1881,7 @@ export default function App() {
                             icon={<User className="w-4 h-4" />}
                         />
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                          <Input 
                             label="Data" 
                             type="date" 
@@ -1915,7 +1915,7 @@ export default function App() {
                     icon={<MapPin className="w-4 h-4" />}
                     />
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                     <Input 
                         label="Número" 
                         name="number"
@@ -1948,16 +1948,16 @@ export default function App() {
                     icon={<Building2 className="w-4 h-4" />}
                     />
 
-                    <div className="bg-gray-800/30 border border-gray-700/50 rounded-lg p-3 flex items-center justify-between">
+                    <div className="bg-gray-800/30 border border-gray-700/50 rounded-lg p-3 flex flex-col sm:flex-row gap-2 sm:gap-0 items-start sm:items-center justify-between">
                         <div className="flex items-center gap-2 text-gray-400 text-xs uppercase font-bold tracking-wider">
                            <MapPin className="w-4 h-4" />
                            <span>Localização</span>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 w-full sm:w-auto">
                              <button
                                 onClick={handleOpenMap}
                                 disabled={!data.street}
-                                className="flex items-center gap-1 px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 rounded text-xs font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="flex-1 sm:flex-initial flex items-center justify-center gap-1 px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 rounded text-xs font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                              >
                                 <ExternalLink className="w-3 h-3" />
                                 Abrir no Maps
@@ -1965,7 +1965,7 @@ export default function App() {
                              <button
                                 onClick={handleShareLocation}
                                 disabled={!data.street}
-                                className="flex items-center gap-1 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded text-xs font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="flex items-center justify-center px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded text-xs font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                              >
                                 <Share2 className="w-3 h-3" />
                              </button>
@@ -1980,7 +1980,7 @@ export default function App() {
                     icon={<Mail className="w-4 h-4" />}
                     />
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                     <Input 
                         label="Contato 1" 
                         name="contact1"
@@ -2002,40 +2002,40 @@ export default function App() {
             )}
           </div>
 
-          <div className="lg:col-span-7 space-y-6">
+          <div className="lg:col-span-7 space-y-4 sm:space-y-6">
             
-            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 shadow-xl flex flex-wrap gap-3 items-center justify-between">
+            <div className="bg-gray-900 border border-gray-800 rounded-xl sm:rounded-2xl p-3.5 sm:p-4 shadow-xl flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
               <div className="flex items-center gap-2">
-                 <div className="h-8 w-8 rounded-full bg-gray-800 flex items-center justify-center">
+                 <div className="h-8 w-8 rounded-full bg-gray-800 flex items-center justify-center flex-shrink-0">
                     <Printer className="w-4 h-4 text-gray-400" />
                  </div>
                  <span className="text-sm font-medium text-gray-300">Ações Rápidas</span>
               </div>
-              <div className="flex gap-3">
+              <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 sm:gap-3">
                 <button
                   onClick={handleResetData}
-                  className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors shadow-lg shadow-red-900/20"
+                  className="flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs sm:text-sm font-medium transition-colors shadow-lg shadow-red-900/20"
                 >
                   <RotateCcw className="w-4 h-4" />
                   Novo Cliente
                 </button>
                 <button
                   onClick={handleSendWhatsApp}
-                  className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors shadow-lg shadow-green-900/20"
+                  className="flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs sm:text-sm font-medium transition-colors shadow-lg shadow-green-900/20"
                 >
                   <MessageCircle className="w-4 h-4" />
                   WhatsApp
                 </button>
                 <button
                   onClick={handleSendEmail}
-                  className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition-colors shadow-lg shadow-gray-900/20"
+                  className="flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-xs sm:text-sm font-medium transition-colors shadow-lg shadow-gray-900/20"
                 >
                   <Mail className="w-4 h-4" />
                   E-mail
                 </button>
                 <button
                   onClick={() => setIsHistoryModalOpen(true)}
-                  className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors shadow-lg shadow-purple-900/20"
+                  className="flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs sm:text-sm font-medium transition-colors shadow-lg shadow-purple-900/20"
                   title="Ver histórico de comprovantes emitidos no Supabase"
                 >
                   <History className="w-4 h-4" />
@@ -2044,7 +2044,7 @@ export default function App() {
                 <button
                   onClick={handleGeneratePDF}
                   disabled={isSavingSupabase}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-75 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors shadow-lg shadow-blue-900/20"
+                  className="col-span-2 sm:col-span-1 flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2.5 sm:py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-75 disabled:cursor-not-allowed text-white rounded-lg text-xs sm:text-sm font-bold transition-colors shadow-lg shadow-blue-900/20"
                 >
                   {isSavingSupabase ? (
                     <>
@@ -2061,17 +2061,17 @@ export default function App() {
               </div>
             </div>
 
-            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 shadow-2xl relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-4 z-10">
+            <div className="bg-gray-900 border border-gray-800 rounded-xl sm:rounded-2xl p-2 sm:p-8 shadow-2xl relative w-full overflow-hidden">
+                <div className="absolute top-0 right-0 p-3 sm:p-4 z-10">
                     <span className="text-[10px] font-bold tracking-widest text-gray-600 uppercase border border-gray-700 bg-white/80 px-2 py-1 rounded backdrop-blur">Preview</span>
                 </div>
                 
-                <div className="bg-white text-gray-900 p-8 rounded-lg shadow-sm min-h-[800px] max-w-lg mx-auto transform transition-all flex flex-col">
+                <div className="bg-white text-gray-900 p-3 sm:p-8 rounded-lg shadow-sm min-h-[700px] sm:min-h-[800px] w-full max-w-full sm:max-w-lg mx-auto transform transition-all flex flex-col overflow-x-auto">
                     
-                    <div className="bg-[#1e40af] text-white p-6 -mx-8 -mt-8 mb-6 flex justify-between items-start">
+                    <div className="bg-[#1e40af] text-white p-3 sm:p-6 -mx-3 sm:-mx-8 -mt-3 sm:-mt-8 mb-4 sm:mb-6 flex justify-between items-start">
                        <div className="flex flex-col justify-center h-full">
-                           <h1 className="font-serif font-bold text-3xl">BelConfort</h1>
-                           <span className="text-[9px] tracking-[0.2em] font-sans">CAMAS E MÓVEIS</span>
+                           <h1 className="font-serif font-bold text-2xl sm:text-3xl">BelConfort</h1>
+                           <span className="text-[8px] sm:text-[9px] tracking-[0.2em] font-sans">CAMAS E MÓVEIS</span>
                        </div>
                        <div className="flex flex-col items-end text-[9px] leading-tight space-y-1 mt-2">
                            <p className="font-bold">CNPJ 60.190.028/0001-60</p>
@@ -2169,8 +2169,8 @@ export default function App() {
                          </div>
                     </div>
 
-                    <div className="flex items-start pt-5 mb-4 justify-between">
-                        <div className="border border-gray-300 rounded w-[240px]">
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-start pt-4 sm:pt-5 mb-4 justify-between gap-3 sm:gap-4">
+                        <div className="border border-gray-300 rounded w-full sm:w-[240px]">
                             <div className="flex justify-between items-center px-3 py-2 border-b border-gray-300 bg-gray-50/50">
                                 <span className="text-[10px] font-bold text-gray-400 uppercase">CÓDIGO DA VENDA</span>
                                 <span className="text-sm font-bold text-blue-800">{data.saleCode?.toUpperCase() || '-'}</span>
@@ -2185,7 +2185,7 @@ export default function App() {
                             </div>
                         </div>
 
-                        <div className="w-64 text-xs pt-2">
+                        <div className="w-full sm:w-64 text-xs pt-1 sm:pt-2">
                              <div className="flex justify-between mb-1 text-gray-600">
                                  <span>Subtotal:</span>
                                  <span>{subtotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
@@ -2211,7 +2211,7 @@ export default function App() {
                                     }
                                 </span>
                              </div>
-                             <div className="flex justify-between mt-2 bg-gray-50 p-1 rounded font-bold text-gray-900 border border-gray-200">
+                             <div className="flex justify-between mt-2 bg-gray-50 p-1.5 sm:p-1 rounded font-bold text-gray-900 border border-gray-200">
                                  <span>TOTAL:</span>
                                  <span>{totalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                              </div>
@@ -2417,15 +2417,15 @@ export default function App() {
 
       {/* Modal de Boas-Vindas / Importação Inteligente & Identificação Obrigatória do Vendedor */}
       {isWelcomeModalOpen && (
-        <div className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
-          <div className="bg-gray-900 border border-blue-500/50 rounded-3xl max-w-xl w-full p-6 sm:p-8 shadow-2xl shadow-blue-950/90 relative my-6 text-left ring-1 ring-blue-500/30">
+        <div className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-md flex items-center justify-center p-2.5 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
+          <div className="bg-gray-900 border border-blue-500/50 rounded-2xl sm:rounded-3xl max-w-xl w-full p-4 sm:p-8 shadow-2xl shadow-blue-950/90 relative my-auto text-left ring-1 ring-blue-500/30">
             
             {/* Botão de Fechar (Apenas permitido se já houver um vendedor identificado no sistema) */}
             {data.salesperson?.trim() && (
               <button 
                 type="button"
                 onClick={() => setIsWelcomeModalOpen(false)}
-                className="absolute top-5 right-5 text-gray-400 hover:text-white bg-gray-800/80 hover:bg-gray-700 p-2 rounded-full transition-colors"
+                className="absolute top-4 sm:top-5 right-4 sm:right-5 text-gray-400 hover:text-white bg-gray-800/80 hover:bg-gray-700 p-1.5 sm:p-2 rounded-full transition-colors"
                 title="Fechar"
               >
                 <X className="w-4 h-4" />
@@ -2433,19 +2433,19 @@ export default function App() {
             )}
 
             {/* Cabeçalho do Modal */}
-            <div className="flex items-start gap-3.5 mb-6 pr-6">
-              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/30 flex-shrink-0">
-                <Sparkles className="w-6 h-6 animate-pulse" />
+            <div className="flex items-start gap-3 sm:gap-3.5 mb-4 sm:mb-6 pr-6">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/30 flex-shrink-0">
+                <Sparkles className="w-5 h-5 sm:w-6 sm:h-6 animate-pulse" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-bold tracking-widest text-blue-400 uppercase bg-blue-500/10 px-2.5 py-0.5 rounded-full border border-blue-500/20 flex items-center gap-1">
-                    <Lock className="w-3 h-3 text-blue-400" />
+                  <span className="text-[9px] sm:text-[10px] font-bold tracking-widest text-blue-400 uppercase bg-blue-500/10 px-2 sm:px-2.5 py-0.5 rounded-full border border-blue-500/20 flex items-center gap-1">
+                    <Lock className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-blue-400" />
                     Identificação Obrigatória
                   </span>
                 </div>
-                <h2 className="text-xl font-bold text-white mt-1">Identifique-se para Acessar</h2>
-                <p className="text-xs text-gray-400 mt-0.5">
+                <h2 className="text-lg sm:text-xl font-bold text-white mt-1">Identifique-se para Acessar</h2>
+                <p className="text-[11px] sm:text-xs text-gray-400 mt-0.5">
                   Informe o seu nome para liberar o painel de vendas e carregar o atendimento.
                 </p>
               </div>

@@ -4,7 +4,7 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>Ecosistema Belconfort</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
@@ -44,9 +44,22 @@
       }
     </script>
     <style>
-      body {
+      *, *::before, *::after {
+        box-sizing: border-box;
+      }
+      html, body {
+        width: 100%;
+        min-height: 100%;
+        margin: 0;
+        padding: 0;
         background-color: #0d1117;
         color: #e2e8f0;
+        overflow-x: hidden;
+        -webkit-text-size-adjust: 100%;
+      }
+      #root {
+        width: 100%;
+        min-height: 100%;
       }
     </style>
   <script type="importmap">

@@ -217,24 +217,24 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-gray-900 border border-gray-800 rounded-xl sm:rounded-2xl w-full max-w-4xl max-h-[92vh] sm:max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
         
         {/* Header */}
-        <div className="px-6 py-5 border-b border-gray-800 flex items-center justify-between bg-gray-900/90 sticky top-0 z-10">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-purple-600/20 border border-purple-500/30 flex items-center justify-center text-purple-400">
-              <FileText className="w-5 h-5" />
+        <div className="px-4 py-3 sm:px-6 sm:py-5 border-b border-gray-800 flex items-center justify-between bg-gray-900/90 sticky top-0 z-10">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-purple-600/20 border border-purple-500/30 flex items-center justify-center text-purple-400 flex-shrink-0">
+              <FileText className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                Histórico de Comprovantes
-                <span className="text-xs font-normal px-2.5 py-0.5 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/20">
+              <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                Histórico
+                <span className="text-[10px] sm:text-xs font-normal px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/20">
                   Supabase
                 </span>
               </h2>
-              <p className="text-xs text-gray-400">
-                Visualize, gerencie e faça o download dos comprovantes emitidos
+              <p className="text-[11px] sm:text-xs text-gray-400">
+                Visualize e gerencie os comprovantes
               </p>
             </div>
           </div>
