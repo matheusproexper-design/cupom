@@ -54,6 +54,23 @@ const BarcodePreview = ({ code }: { code: string }) => {
   return <img ref={imgRef} alt="barcode" className="h-2.5 w-auto max-w-full object-contain opacity-80 mix-blend-multiply mt-0.5" />;
 }
 
+const getTodayDateString = () => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const getYesterdayDateString = () => {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 export default function App() {
   // Initialize state from localStorage or default
   const [data, setData] = useState<ReceiptData>(() => {
@@ -199,25 +216,40 @@ export default function App() {
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
 
   // Onboarding / Welcome Modal State for Smart Import & Attendant Identification
+  const [hasIdentified, setHasIdentified] = useState(() => {
+    return sessionStorage.getItem('belconfort_identified_session') === 'true' && 
+           Boolean(localStorage.getItem('belconfort_saved_salesperson'));
+  });
   const [isWelcomeModalOpen, setIsWelcomeModalOpen] = useState(false);
   const [modalSalesperson, setModalSalesperson] = useState(() => {
     return localStorage.getItem('belconfort_saved_salesperson') || '';
+  });
+  const [modalSaleDate, setModalSaleDate] = useState(() => {
+    return data.date || getTodayDateString();
   });
   const [modalImportText, setModalImportText] = useState("");
   const [isModalImporting, setIsModalImporting] = useState(false);
   const [modalImportError, setModalImportError] = useState<{ title: string; msg: string } | null>(null);
 
-  // Automatically require attendant identification on first entry if no name is saved
+  // Automatically require attendant identification and sale date on first entry
   useEffect(() => {
+    const sessionIdentified = sessionStorage.getItem('belconfort_identified_session') === 'true';
     const saved = localStorage.getItem('belconfort_saved_salesperson');
-    if (saved && saved.trim()) {
+    const hasValidDate = Boolean(data.date && data.date.trim());
+
+    if (sessionIdentified && saved && saved.trim() && hasValidDate) {
       setData(prev => ({
         ...prev,
-        salesperson: prev.salesperson || saved.trim()
+        salesperson: prev.salesperson || saved.trim(),
+        date: prev.date || getTodayDateString()
       }));
       setModalSalesperson(saved.trim());
+      setModalSaleDate(data.date || getTodayDateString());
+      setHasIdentified(true);
     } else {
-      // Obligatory lock: Open modal and require salesperson identification
+      // Obligatory lock: Open modal on start and require identification and sale date
+      setHasIdentified(false);
+      setModalSaleDate(data.date || getTodayDateString());
       setIsWelcomeModalOpen(true);
     }
   }, []);
@@ -328,6 +360,8 @@ export default function App() {
     localStorage.setItem(TEAM_STORAGE_KEY, JSON.stringify(salespeople));
   }, [salespeople]);
 
+  const isIdentified = Boolean(hasIdentified && data.salesperson && data.salesperson.trim() && data.date && data.date.trim());
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setData(prev => ({ ...prev, [name]: value }));
@@ -335,7 +369,13 @@ export default function App() {
 
   const handleResetData = () => {
     if (window.confirm("Tem certeza que deseja iniciar um novo atendimento? Todos os dados atuais serão apagados.")) {
-        setData(INITIAL_DATA);
+        const currentSalesperson = data.salesperson || localStorage.getItem('belconfort_saved_salesperson') || '';
+        const currentDate = data.date || getTodayDateString();
+        setData({
+          ...INITIAL_DATA,
+          salesperson: currentSalesperson,
+          date: currentDate
+        });
         setSearchTerm("");
         setDiscountInput("");
         setShippingInput("");
@@ -735,6 +775,7 @@ export default function App() {
   const handleConfirmWelcomeModal = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const finalSalesperson = modalSalesperson.trim().toUpperCase();
+    const finalSaleDate = modalSaleDate.trim();
 
     // 1. Mandatory salesperson check
     if (!finalSalesperson) {
@@ -742,11 +783,23 @@ export default function App() {
       return;
     }
 
-    // Auto-apply and persist salesperson name
-    localStorage.setItem('belconfort_saved_salesperson', finalSalesperson);
-    setData(prev => ({ ...prev, salesperson: finalSalesperson }));
+    // 2. Mandatory sale date check
+    if (!finalSaleDate) {
+      alert("Por favor, informe ou selecione a data da venda para liberar o acesso ao sistema.");
+      return;
+    }
 
-    // 2. If import text was provided, process via Gemini AI
+    // Auto-apply and persist salesperson name & date
+    localStorage.setItem('belconfort_saved_salesperson', finalSalesperson);
+    sessionStorage.setItem('belconfort_identified_session', 'true');
+    setHasIdentified(true);
+    setData(prev => ({
+      ...prev,
+      salesperson: finalSalesperson,
+      date: finalSaleDate
+    }));
+
+    // 3. If import text was provided, process via Gemini AI
     if (modalImportText.trim()) {
       setIsModalImporting(true);
       setModalImportError(null);
@@ -792,6 +845,7 @@ export default function App() {
           ...prev,
           ...result.clientData,
           salesperson: finalSalesperson,
+          date: finalSaleDate,
           products: updatedProducts,
         }));
 
@@ -807,6 +861,7 @@ export default function App() {
             ...prev,
             ...fallbackResult.clientData,
             salesperson: finalSalesperson,
+            date: finalSaleDate,
           }));
           setModalImportText("");
           setIsWelcomeModalOpen(false);
@@ -821,7 +876,7 @@ export default function App() {
         setIsModalImporting(false);
       }
     } else {
-      // Just close the modal and start with the salesperson defined
+      // Just close the modal and start with the salesperson and sale date defined
       setIsWelcomeModalOpen(false);
     }
   };
@@ -1192,14 +1247,18 @@ export default function App() {
                type="button"
                onClick={() => {
                  setModalSalesperson(data.salesperson || localStorage.getItem('belconfort_saved_salesperson') || '');
+                 setModalSaleDate(data.date || getTodayDateString());
                  setIsWelcomeModalOpen(true);
                }}
                className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/20 text-xs font-semibold transition-all backdrop-blur-sm shadow-sm"
-               title="Abrir Importação Inteligente ou alterar Vendedor"
+               title="Abrir Importação Inteligente ou alterar Vendedor / Data"
              >
                <Sparkles className="w-3.5 h-3.5 text-yellow-300 flex-shrink-0" />
-               <span className="hidden md:inline">Importação IA & Vendedor:</span>
+               <span className="hidden md:inline">Vendedor & Data:</span>
                <span className="font-bold text-yellow-200 uppercase max-w-[100px] sm:max-w-none truncate">{data.salesperson || 'Identificar'}</span>
+               {data.date && (
+                 <span className="text-[11px] text-blue-200 font-mono hidden sm:inline">({formatSafeDate(data.date)})</span>
+               )}
              </button>
              <div className="hidden md:block text-right">
                 <p className="text-xs text-blue-200 font-medium">Ecosistema</p>
@@ -2093,62 +2152,65 @@ export default function App() {
 
           <div className="lg:col-span-7 space-y-4 sm:space-y-6">
             
-            <div className="bg-gray-900 border border-gray-800 rounded-xl sm:rounded-2xl p-3.5 sm:p-4 shadow-xl flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
-              <div className="flex items-center gap-2">
-                 <div className="h-8 w-8 rounded-full bg-gray-800 flex items-center justify-center flex-shrink-0">
-                    <Printer className="w-4 h-4 text-gray-400" />
-                 </div>
-                 <span className="text-sm font-medium text-gray-300">Ações Rápidas</span>
+            {/* Ações Rápidas (Apenas exibido se a pessoa se identificar no início) */}
+            {isIdentified && (
+              <div className="bg-gray-900 border border-gray-800 rounded-xl sm:rounded-2xl p-3.5 sm:p-4 shadow-xl flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between animate-in fade-in duration-200">
+                <div className="flex items-center gap-2">
+                   <div className="h-8 w-8 rounded-full bg-gray-800 flex items-center justify-center flex-shrink-0">
+                      <Printer className="w-4 h-4 text-gray-400" />
+                   </div>
+                   <span className="text-sm font-medium text-gray-300">Ações Rápidas</span>
+                </div>
+                <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 sm:gap-3">
+                  <button
+                    onClick={handleResetData}
+                    className="flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs sm:text-sm font-medium transition-colors shadow-lg shadow-red-900/20"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    Novo Cliente
+                  </button>
+                  <button
+                    onClick={handleSendWhatsApp}
+                    className="flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs sm:text-sm font-medium transition-colors shadow-lg shadow-green-900/20"
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                    WhatsApp
+                  </button>
+                  <button
+                    onClick={handleSendEmail}
+                    className="flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-xs sm:text-sm font-medium transition-colors shadow-lg shadow-gray-900/20"
+                  >
+                    <Mail className="w-4 h-4" />
+                    E-mail
+                  </button>
+                  <button
+                    onClick={() => setIsHistoryModalOpen(true)}
+                    className="flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs sm:text-sm font-medium transition-colors shadow-lg shadow-purple-900/20"
+                    title="Ver histórico de comprovantes emitidos (Requer senha)"
+                  >
+                    <History className="w-4 h-4" />
+                    Histórico
+                  </button>
+                  <button
+                    onClick={handleGeneratePDF}
+                    disabled={isSavingSupabase}
+                    className="col-span-2 sm:col-span-1 flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2.5 sm:py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-75 disabled:cursor-not-allowed text-white rounded-lg text-xs sm:text-sm font-bold transition-colors shadow-lg shadow-blue-900/20"
+                  >
+                    {isSavingSupabase ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Salvando...
+                      </>
+                    ) : (
+                      <>
+                        <Download className="w-4 h-4" />
+                        Gerar PDF
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
-              <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 sm:gap-3">
-                <button
-                  onClick={handleResetData}
-                  className="flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs sm:text-sm font-medium transition-colors shadow-lg shadow-red-900/20"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                  Novo Cliente
-                </button>
-                <button
-                  onClick={handleSendWhatsApp}
-                  className="flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs sm:text-sm font-medium transition-colors shadow-lg shadow-green-900/20"
-                >
-                  <MessageCircle className="w-4 h-4" />
-                  WhatsApp
-                </button>
-                <button
-                  onClick={handleSendEmail}
-                  className="flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-xs sm:text-sm font-medium transition-colors shadow-lg shadow-gray-900/20"
-                >
-                  <Mail className="w-4 h-4" />
-                  E-mail
-                </button>
-                <button
-                  onClick={() => setIsHistoryModalOpen(true)}
-                  className="flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs sm:text-sm font-medium transition-colors shadow-lg shadow-purple-900/20"
-                  title="Ver histórico de comprovantes emitidos no Supabase"
-                >
-                  <History className="w-4 h-4" />
-                  Histórico
-                </button>
-                <button
-                  onClick={handleGeneratePDF}
-                  disabled={isSavingSupabase}
-                  className="col-span-2 sm:col-span-1 flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2.5 sm:py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-75 disabled:cursor-not-allowed text-white rounded-lg text-xs sm:text-sm font-bold transition-colors shadow-lg shadow-blue-900/20"
-                >
-                  {isSavingSupabase ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Salvando...
-                    </>
-                  ) : (
-                    <>
-                      <Download className="w-4 h-4" />
-                      Gerar PDF
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
+            )}
 
             <div className="bg-gray-900 border border-gray-800 rounded-xl sm:rounded-2xl p-2 sm:p-8 shadow-2xl relative w-full overflow-hidden">
                 <div className="absolute top-0 right-0 p-3 sm:p-4 z-10">
@@ -2510,7 +2572,7 @@ export default function App() {
           <div className="bg-gray-900 border border-blue-500/50 rounded-2xl sm:rounded-3xl max-w-xl w-full p-4 sm:p-8 shadow-2xl shadow-blue-950/90 relative my-auto text-left ring-1 ring-blue-500/30">
             
             {/* Botão de Fechar (Apenas permitido se já houver um vendedor identificado no sistema) */}
-            {data.salesperson?.trim() && (
+            {isIdentified && (
               <button 
                 type="button"
                 onClick={() => setIsWelcomeModalOpen(false)}
@@ -2661,7 +2723,7 @@ export default function App() {
                   </button>
                 )}
 
-                {data.salesperson?.trim() && (
+                {isIdentified && (
                   <button
                     type="button"
                     onClick={() => setIsWelcomeModalOpen(false)}

@@ -6,10 +6,10 @@ import {
   X, Search, Download, Loader2, RefreshCw, 
   Calendar, User, ShoppingBag, DollarSign, 
   RotateCcw, Trash2, FileText, ChevronDown, ChevronUp, AlertCircle,
-  Lock, Eye, EyeOff, ShieldAlert
+  Lock, Eye, EyeOff
 } from 'lucide-react';
 
-const ADMIN_DELETE_PASSWORD = '50735073Math@';
+const HISTORY_ACCESS_PASSWORD = '50735073Math@';
 
 export interface ComprovanteItem {
   id: string;
@@ -46,11 +46,14 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  // Password confirmation states
+  // Access authentication states
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [accessPassword, setAccessPassword] = useState('');
+  const [accessPasswordError, setAccessPasswordError] = useState('');
+  const [showAccessPassword, setShowAccessPassword] = useState(false);
+
+  // Delete confirmation state
   const [itemToDelete, setItemToDelete] = useState<Comprovante | null>(null);
-  const [inputPassword, setInputPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [passwordError, setPasswordError] = useState('');
 
   const fetchHistory = async () => {
     setLoading(true);
@@ -87,10 +90,24 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
   };
 
   useEffect(() => {
-    if (isOpen) {
-      fetchHistory();
+    if (!isOpen) {
+      setIsAuthenticated(false);
+      setAccessPassword('');
+      setAccessPasswordError('');
+      setShowAccessPassword(false);
     }
   }, [isOpen]);
+
+  const handleAuthenticate = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (accessPassword === HISTORY_ACCESS_PASSWORD) {
+      setIsAuthenticated(true);
+      setAccessPasswordError('');
+      fetchHistory();
+    } else {
+      setAccessPasswordError('Senha incorreta! Não autorizado a acessar o histórico.');
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -242,19 +259,10 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
 
   const handleRequestDelete = (comp: Comprovante) => {
     setItemToDelete(comp);
-    setInputPassword('');
-    setPasswordError('');
-    setShowPassword(false);
   };
 
-  const handleConfirmDeleteWithPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleConfirmDelete = async () => {
     if (!itemToDelete) return;
-
-    if (inputPassword !== ADMIN_DELETE_PASSWORD) {
-      setPasswordError('Senha incorreta! Não autorizado a excluir.');
-      return;
-    }
 
     const id = itemToDelete.id;
     setDeletingId(id);
@@ -284,8 +292,6 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
       console.error('Erro ao excluir:', err);
     } finally {
       setDeletingId(null);
-      setInputPassword('');
-      setPasswordError('');
     }
   };
 
@@ -308,6 +314,94 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
       return isoString;
     }
   };
+
+  // Se não estiver autenticado, exibe a tela de solicitação de senha para acesso ao histórico
+  if (!isAuthenticated) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-150">
+        <div className="bg-gray-900 border border-purple-500/40 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-5">
+          
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-purple-600/20 border border-purple-500/40 flex items-center justify-center text-purple-400 flex-shrink-0">
+                <Lock className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  Histórico Protegido
+                  <span className="text-[10px] font-normal px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/20">
+                    Acesso Restrito
+                  </span>
+                </h3>
+                <p className="text-xs text-gray-400">
+                  Informe a senha para acessar os comprovantes emitidos.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="p-1.5 text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <form onSubmit={handleAuthenticate} className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-gray-300 flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5 text-purple-400" />
+                Senha de Acesso
+              </label>
+              <div className="relative">
+                <input
+                  type={showAccessPassword ? 'text' : 'password'}
+                  value={accessPassword}
+                  onChange={(e) => {
+                    setAccessPassword(e.target.value);
+                    if (accessPasswordError) setAccessPasswordError('');
+                  }}
+                  placeholder="Digite a senha de acesso..."
+                  autoFocus
+                  className="w-full bg-gray-950 border border-gray-700 focus:border-purple-500 text-gray-100 text-sm rounded-xl pl-3 pr-10 py-2.5 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500/20 transition-all font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowAccessPassword(!showAccessPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200"
+                >
+                  {showAccessPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              {accessPasswordError && (
+                <p className="text-xs text-red-400 font-medium flex items-center gap-1 mt-1 animate-in fade-in">
+                  <AlertCircle className="w-3.5 h-3.5" />
+                  {accessPasswordError}
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-xl text-xs font-semibold transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={!accessPassword.trim()}
+                className="flex items-center gap-2 px-5 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-purple-600/30"
+              >
+                <Lock className="w-3.5 h-3.5" />
+                Acessar Histórico
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
@@ -333,6 +427,13 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
           </div>
           
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsAuthenticated(false)}
+              title="Bloquear acesso ao histórico"
+              className="p-2 text-gray-400 hover:text-purple-400 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
+            >
+              <Lock className="w-4 h-4" />
+            </button>
             <button
               onClick={fetchHistory}
               disabled={loading}
@@ -550,7 +651,7 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
                         onClick={() => handleRequestDelete(comp)}
                         disabled={isDeleting}
                         className="p-1.5 bg-red-600/20 hover:bg-red-600/40 text-red-400 hover:text-red-300 rounded-lg transition-colors disabled:opacity-50"
-                        title="Excluir comprovante (Requer senha)"
+                        title="Excluir comprovante"
                       >
                         {isDeleting ? (
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -698,19 +799,19 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
 
       </div>
 
-      {/* Modal de Confirmação com Senha para Excluir */}
+      {/* Modal de Confirmação para Excluir */}
       {itemToDelete && (
         <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-150">
           <div className="bg-gray-900 border border-red-500/40 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
             
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-xl bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-400 flex-shrink-0">
-                <ShieldAlert className="w-6 h-6" />
+                <Trash2 className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-white">Autorização Necessária</h3>
+                <h3 className="text-base font-bold text-white">Excluir Comprovante</h3>
                 <p className="text-xs text-gray-400">
-                  Informe a senha administrativa para excluir este registro.
+                  Tem certeza que deseja remover este comprovante do histórico?
                 </p>
               </div>
             </div>
@@ -730,62 +831,23 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
               </p>
             </div>
 
-            <form onSubmit={handleConfirmDeleteWithPassword} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-gray-300 flex items-center gap-1.5">
-                  <Lock className="w-3.5 h-3.5 text-purple-400" />
-                  Senha de Exclusão
-                </label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={inputPassword}
-                    onChange={(e) => {
-                      setInputPassword(e.target.value);
-                      if (passwordError) setPasswordError('');
-                    }}
-                    placeholder="Digite a senha de segurança..."
-                    autoFocus
-                    className="w-full bg-gray-950 border border-gray-700 focus:border-red-500 text-gray-100 text-sm rounded-xl pl-3 pr-10 py-2.5 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500/20 transition-all font-mono"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200"
-                  >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-                {passwordError && (
-                  <p className="text-xs text-red-400 font-medium flex items-center gap-1 mt-1">
-                    <AlertCircle className="w-3.5 h-3.5" />
-                    {passwordError}
-                  </p>
-                )}
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setItemToDelete(null);
-                    setInputPassword('');
-                    setPasswordError('');
-                  }}
-                  className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-xl text-xs font-semibold transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={!inputPassword}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-colors shadow-lg shadow-red-900/30 flex items-center gap-1.5"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  Confirmar Exclusão
-                </button>
-              </div>
-            </form>
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setItemToDelete(null)}
+                className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-xl text-xs font-semibold transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-colors shadow-lg shadow-red-900/30 flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Confirmar Exclusão
+              </button>
+            </div>
 
           </div>
         </div>
