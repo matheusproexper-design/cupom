@@ -997,58 +997,114 @@ export default function App() {
   const totalDiscount = bundleDiscount + manualDiscount;
   const totalValue = Math.max(0, subtotal - totalDiscount + (data.shippingValue || 0));
 
-  // Helper to create a temporary data object with the FULL discount applied for the PDF/Message
-  const getDataForExport = () => {
+  // Helper to create a temporary data object with the FULL discount and emission timestamp applied
+  const getDataForExport = (): ReceiptData => {
+    const now = new Date();
+    const emissionDate = now.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const emissionTime = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
     return {
         ...data,
         bundleDiscount: bundleDiscount,
         bundleLabel: bundleDiscountLabel, 
         discountType: data.discountType,
-        discountValue: data.discountValue
+        discountValue: data.discountValue,
+        shippingValue: data.shippingValue || 0,
+        emissionDate: data.emissionDate || emissionDate,
+        emissionTime: data.emissionTime || emissionTime,
     } as ReceiptData;
   };
 
-  const handleGeneratePDF = async () => {
-    setIsSavingSupabase(true);
+  // Persists the receipt to Supabase (including the full snapshot with 100% of emission details)
+  const saveReceiptToDatabase = async (exportData: ReceiptData, finalTotal: number) => {
     try {
-      // 1. Criar novo registro na tabela comprovantes (salvando o nome do cliente e valor total)
-      const clientName = data.name && data.name.trim() ? data.name.trim() : 'CLIENTE NÃO INFORMADO';
+      const clientName = exportData.name && exportData.name.trim() ? exportData.name.trim() : 'CLIENTE NÃO INFORMADO';
       const { data: comprovante, error: compError } = await supabase
         .from('comprovantes')
         .insert([{
           cliente_nome: clientName,
-          total: totalValue
+          total: finalTotal
         }])
         .select()
         .single();
 
       if (compError) {
         console.error('[Supabase] Erro ao salvar comprovante:', compError);
-      } else if (comprovante?.id && data.products.length > 0) {
-        // 2. Pegar o ID gerado e salvar os produtos do carrinho na tabela itens_comprovante vinculados à venda
-        const itensToInsert = data.products.map(p => ({
+        return null;
+      }
+
+      if (comprovante?.id) {
+        // 1. Salvar os itens do carrinho na tabela itens_comprovante
+        const itensToInsert: any[] = exportData.products.map(p => ({
           comprovante_id: comprovante.id,
           nome_produto: p.name,
           quantidade: p.quantity,
           preco: p.price
         }));
 
+        // 2. Salvar o SNAPSHOT COMPLETO com 100% dos dados da emissão (endereço, vendedor, descontos, garantias, timestamps, etc.)
+        const snapshotPayload = JSON.stringify({
+          ...exportData,
+          comprovanteId: comprovante.id,
+          totalValue: finalTotal,
+          savedAt: new Date().toISOString()
+        });
+
+        itensToInsert.push({
+          comprovante_id: comprovante.id,
+          nome_produto: '__BELCONFORT_RECEIPT_SNAPSHOT__:' + snapshotPayload,
+          quantidade: 0,
+          preco: 0
+        });
+
         const { error: itemsError } = await supabase
           .from('itens_comprovante')
           .insert(itensToInsert);
 
         if (itemsError) {
-          console.error('[Supabase] Erro ao salvar itens do comprovante no Supabase:', itemsError);
+          console.error('[Supabase] Erro ao salvar itens/snapshot no Supabase:', itemsError);
         } else {
-          console.log('[Supabase] Comprovante e itens registrados com sucesso! ID:', comprovante.id);
+          console.log('[Supabase] Comprovante e snapshot completo registrados! ID:', comprovante.id);
         }
+
+        // 3. Salvar em cache no localStorage para acesso ultrarrápido
+        try {
+          const storedSnapshots = JSON.parse(localStorage.getItem('belconfort_receipt_snapshots') || '{}');
+          storedSnapshots[comprovante.id] = { ...exportData, comprovanteId: comprovante.id, totalValue: finalTotal };
+          localStorage.setItem('belconfort_receipt_snapshots', JSON.stringify(storedSnapshots));
+        } catch (e) {
+          console.error('[Storage] Erro ao salvar snapshot local:', e);
+        }
+
+        // 4. Salvar backup no servidor Node
+        try {
+          fetch('/api/receipts-snapshots', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              id: comprovante.id,
+              snapshot: { ...exportData, comprovanteId: comprovante.id, totalValue: finalTotal }
+            })
+          }).catch(() => {});
+        } catch {}
+
+        return comprovante.id;
       }
     } catch (err) {
       console.error('[Supabase] Erro inesperado ao salvar no Supabase:', err);
+    }
+    return null;
+  };
+
+  const handleGeneratePDF = async () => {
+    setIsSavingSupabase(true);
+    const exportData = getDataForExport();
+    try {
+      await saveReceiptToDatabase(exportData, totalValue);
     } finally {
       setIsSavingSupabase(false);
-      // Gerar PDF
-      await generateReceiptPDF(getDataForExport());
+      // Gerar PDF com todos os dados de emissão
+      await generateReceiptPDF(exportData);
     }
   };
 

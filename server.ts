@@ -517,6 +517,41 @@ async function startServer() {
     }
   });
 
+  // Receipts Snapshots Backup Endpoints
+  const snapshotsPath = path.join(process.cwd(), 'receipts_snapshots.json');
+  const loadSnapshots = (): Record<string, any> => {
+    try {
+      if (fs.existsSync(snapshotsPath)) {
+        return JSON.parse(fs.readFileSync(snapshotsPath, 'utf8'));
+      }
+    } catch (e) {
+      console.error("[Server] Error reading receipts_snapshots.json:", e);
+    }
+    return {};
+  };
+
+  const saveSnapshots = (data: Record<string, any>) => {
+    try {
+      fs.writeFileSync(snapshotsPath, JSON.stringify(data, null, 2), 'utf8');
+    } catch (e) {
+      console.error("[Server] Error writing receipts_snapshots.json:", e);
+    }
+  };
+
+  app.get("/api/receipts-snapshots", (req, res) => {
+    res.json(loadSnapshots());
+  });
+
+  app.post("/api/receipts-snapshots", (req, res) => {
+    const { id, snapshot } = req.body;
+    if (id && snapshot) {
+      const all = loadSnapshots();
+      all[id] = snapshot;
+      saveSnapshots(all);
+    }
+    res.json({ success: true });
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

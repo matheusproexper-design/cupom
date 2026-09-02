@@ -38,6 +38,8 @@ export interface ReceiptData {
   shippingValue?: number;
   bundleDiscount?: number;
   bundleLabel?: string;
+  emissionDate?: string;
+  emissionTime?: string;
 }
 
 export const INITIAL_DATA: ReceiptData = {
@@ -62,6 +64,8 @@ export const INITIAL_DATA: ReceiptData = {
   shippingValue: 0,
   bundleDiscount: 0,
   bundleLabel: '',
+  emissionDate: '',
+  emissionTime: '',
 };
 
 // Updated Catalog with new prices for Bases

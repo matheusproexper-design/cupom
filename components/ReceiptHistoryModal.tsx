@@ -79,15 +79,111 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
 
   if (!isOpen) return null;
 
+  // Extrai o snapshot completo de emissão se disponível no comprovante ou no cache local
+  const getSnapshotFromComprovante = (comp: Comprovante): ReceiptData | null => {
+    if (comp.itens_comprovante && comp.itens_comprovante.length > 0) {
+      const snapshotItem = comp.itens_comprovante.find(i => 
+        i.nome_produto && i.nome_produto.startsWith('__BELCONFORT_RECEIPT_SNAPSHOT__:')
+      );
+      if (snapshotItem) {
+        try {
+          const jsonStr = snapshotItem.nome_produto.replace('__BELCONFORT_RECEIPT_SNAPSHOT__:', '');
+          const parsed = JSON.parse(jsonStr);
+          if (parsed && typeof parsed === 'object') {
+            return parsed as ReceiptData;
+          }
+        } catch (e) {
+          console.error('Erro ao ler snapshot do comprovante:', e);
+        }
+      }
+    }
+
+    // Fallback: verificar cache em localStorage
+    try {
+      const stored = JSON.parse(localStorage.getItem('belconfort_receipt_snapshots') || '{}');
+      if (stored[comp.id]) {
+        return stored[comp.id] as ReceiptData;
+      }
+    } catch {}
+
+    return null;
+  };
+
+  // Reconstrói o ReceiptData completo com 100% dos dados originais da emissão
+  const getFullReceiptData = (comp: Comprovante): ReceiptData => {
+    const snapshot = getSnapshotFromComprovante(comp);
+    if (snapshot) {
+      return {
+        ...INITIAL_DATA,
+        ...snapshot,
+        products: Array.isArray(snapshot.products) ? snapshot.products : []
+      };
+    }
+
+    // Fallback gracioso para registros legados sem snapshot
+    const dateObj = comp.data_emissao ? new Date(comp.data_emissao) : new Date();
+    const formattedDate = dateObj.toLocaleDateString('pt-BR');
+    const emissionDate = dateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const emissionTime = dateObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+    const validItems = (comp.itens_comprovante || []).filter(i => 
+      !i.nome_produto?.startsWith('__BELCONFORT_RECEIPT_SNAPSHOT__:')
+    );
+
+    const prods = validItems.length > 0
+      ? validItems.map((item, idx) => ({
+          code: (100000 + idx).toString(),
+          name: item.nome_produto || 'PRODUTO',
+          price: Number(item.preco) || 0,
+          quantity: Number(item.quantidade) || 1,
+          warrantyTime: '1',
+          warrantyUnit: 'ANOS' as const
+        }))
+      : [
+          {
+            code: '100001',
+            name: 'PRODUTO REGISTRADO EM COMPROVANTE',
+            price: Number(comp.total) || 0,
+            quantity: 1,
+            warrantyUnit: 'MESES' as const
+          }
+        ];
+
+    const itemsSum = prods.reduce((sum, p) => sum + (p.price * p.quantity), 0);
+    const discount = Math.max(0, itemsSum - Number(comp.total || 0));
+
+    return {
+      ...INITIAL_DATA,
+      name: comp.cliente_nome || 'CLIENTE NÃO INFORMADO',
+      date: formattedDate,
+      emissionDate: emissionDate,
+      emissionTime: emissionTime,
+      products: prods,
+      discountType: 'fixed',
+      discountValue: discount,
+      paymentMethod: 'NÃO ESPECIFICADO'
+    };
+  };
+
   const filteredList = comprovantes.filter(c => {
     if (!searchTerm.trim()) return true;
     const term = searchTerm.toLowerCase();
     const matchesName = (c.cliente_nome || '').toLowerCase().includes(term);
     const matchesId = (c.id || '').toLowerCase().includes(term);
-    const matchesItem = (c.itens_comprovante || []).some(i => 
+    
+    // Itens reais do comprovante (excluindo snapshot)
+    const validItems = (c.itens_comprovante || []).filter(i => !i.nome_produto?.startsWith('__BELCONFORT_RECEIPT_SNAPSHOT__:'));
+    const matchesItem = validItems.some(i => 
       (i.nome_produto || '').toLowerCase().includes(term)
     );
-    return matchesName || matchesId || matchesItem;
+
+    // Snapshot metadata (vendedor, código de venda, cpf)
+    const snap = getSnapshotFromComprovante(c);
+    const matchesSeller = snap?.salesperson ? snap.salesperson.toLowerCase().includes(term) : false;
+    const matchesSaleCode = snap?.saleCode ? snap.saleCode.toLowerCase().includes(term) : false;
+    const matchesCpf = snap?.cpf ? snap.cpf.toLowerCase().includes(term) : false;
+
+    return matchesName || matchesId || matchesItem || matchesSeller || matchesSaleCode || matchesCpf;
   });
 
   const totalValueSum = comprovantes.reduce((sum, c) => sum + (Number(c.total) || 0), 0);
@@ -95,35 +191,8 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
   const handleDownloadPDF = async (comp: Comprovante) => {
     setDownloadingId(comp.id);
     try {
-      const formattedDate = comp.data_emissao 
-        ? new Date(comp.data_emissao).toLocaleDateString('pt-BR') 
-        : new Date().toLocaleDateString('pt-BR');
-
-      const receiptData: ReceiptData = {
-        ...INITIAL_DATA,
-        name: comp.cliente_nome || 'CLIENTE',
-        date: formattedDate,
-        products: (comp.itens_comprovante && comp.itens_comprovante.length > 0)
-          ? comp.itens_comprovante.map((item, idx) => ({
-              code: (100000 + idx).toString(),
-              name: item.nome_produto || 'PRODUTO',
-              price: Number(item.preco) || 0,
-              quantity: Number(item.quantidade) || 1,
-              warrantyUnit: 'MESES'
-            }))
-          : [
-              {
-                code: '100001',
-                name: 'PRODUTO REGISTRADO EM COMPROVANTE',
-                price: Number(comp.total) || 0,
-                quantity: 1,
-                warrantyUnit: 'MESES'
-              }
-            ],
-        discountType: 'fixed',
-        discountValue: 0
-      };
-
+      // Reconstrói 100% dos dados originais da emissão
+      const receiptData = getFullReceiptData(comp);
       await generateReceiptPDF(receiptData);
     } catch (err) {
       console.error('Erro ao gerar PDF do histórico:', err);
@@ -135,26 +204,8 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
 
   const handleLoadToForm = (comp: Comprovante) => {
     if (onLoadReceipt) {
-      const formattedDate = comp.data_emissao 
-        ? new Date(comp.data_emissao).toLocaleDateString('pt-BR') 
-        : '';
-
-      const products = (comp.itens_comprovante && comp.itens_comprovante.length > 0)
-        ? comp.itens_comprovante.map((item, idx) => ({
-            code: (100000 + idx).toString(),
-            name: item.nome_produto || 'PRODUTO',
-            price: Number(item.preco) || 0,
-            quantity: Number(item.quantidade) || 1,
-            warrantyUnit: 'MESES' as const
-          }))
-        : [];
-
-      onLoadReceipt({
-        name: comp.cliente_nome || '',
-        date: formattedDate,
-        products: products,
-      });
-
+      const receiptData = getFullReceiptData(comp);
+      onLoadReceipt(receiptData);
       onClose();
     }
   };
@@ -326,8 +377,13 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
             </div>
           ) : (
             filteredList.map((comp) => {
+              const snapshot = getSnapshotFromComprovante(comp);
+              const validItems = (comp.itens_comprovante || []).filter(i => 
+                !i.nome_produto?.startsWith('__BELCONFORT_RECEIPT_SNAPSHOT__:')
+              );
+              const hasSnapshotProducts = Boolean(snapshot?.products && snapshot.products.length > 0);
+              const itemsCount = hasSnapshotProducts ? snapshot!.products.length : validItems.length;
               const isExpanded = expandedId === comp.id;
-              const itemsCount = comp.itens_comprovante?.length || 0;
               const isDownloading = downloadingId === comp.id;
               const isDeleting = deletingId === comp.id;
 
@@ -343,22 +399,44 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
                         <span className="text-sm font-bold text-white uppercase tracking-tight flex items-center gap-1.5">
                           <User className="w-3.5 h-3.5 text-purple-400" />
-                          {comp.cliente_nome || 'CLIENTE NÃO INFORMADO'}
+                          {snapshot?.name || comp.cliente_nome || 'CLIENTE NÃO INFORMADO'}
                         </span>
+                        {snapshot?.saleCode && (
+                          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-blue-950/80 text-blue-300 border border-blue-800/60">
+                            PEDIDO: {snapshot.saleCode}
+                          </span>
+                        )}
                         <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-gray-900 text-gray-400 border border-gray-700">
                           ID: {comp.id.substring(0, 8)}...
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-4 text-xs text-gray-400 flex-wrap">
-                        <span className="flex items-center gap-1">
-                          <Calendar className="w-3.5 h-3.5 text-gray-500" />
-                          {formatDate(comp.data_emissao)}
+                      <div className="flex items-center gap-x-4 gap-y-1 text-xs text-gray-400 flex-wrap mt-1">
+                        <span className="flex items-center gap-1 text-gray-300 font-medium">
+                          <Calendar className="w-3.5 h-3.5 text-purple-400" />
+                          {snapshot?.emissionDate && snapshot?.emissionTime 
+                            ? `Emitido em ${snapshot.emissionDate} às ${snapshot.emissionTime}` 
+                            : formatDate(comp.data_emissao)}
                         </span>
                         <span className="flex items-center gap-1">
                           <ShoppingBag className="w-3.5 h-3.5 text-gray-500" />
-                          {itemsCount} {itemsCount === 1 ? 'item' : 'itens'}
+                          {itemsCount} {itemsCount === 1 ? 'produto' : 'produtos'}
                         </span>
+                        {snapshot?.salesperson && (
+                          <span className="text-gray-400">
+                            <span className="text-gray-500 font-semibold">Vendedor:</span> {snapshot.salesperson}
+                          </span>
+                        )}
+                        {snapshot?.paymentMethod && (
+                          <span className="text-gray-400">
+                            <span className="text-gray-500 font-semibold">Pagamento:</span> {snapshot.paymentMethod}
+                          </span>
+                        )}
+                        {(snapshot?.city || snapshot?.neighborhood) && (
+                          <span className="text-gray-400 truncate max-w-xs">
+                            <span className="text-gray-500 font-semibold">Local:</span> {[snapshot.neighborhood, snapshot.city].filter(Boolean).join(', ')}
+                          </span>
+                        )}
                       </div>
                     </div>
 
@@ -378,7 +456,7 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
                         <button
                           onClick={() => toggleExpand(comp.id)}
                           className="flex items-center gap-1 px-2.5 py-1.5 bg-gray-700/60 hover:bg-gray-700 text-gray-300 rounded-lg text-xs font-medium transition-colors"
-                          title="Ver itens da venda"
+                          title="Ver detalhes e produtos da venda"
                         >
                           {isExpanded ? (
                             <>
@@ -388,7 +466,7 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
                           ) : (
                             <>
                               <ChevronDown className="w-3.5 h-3.5" />
-                              Itens ({itemsCount})
+                              Detalhes ({itemsCount})
                             </>
                           )}
                         </button>
@@ -399,7 +477,7 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
                         onClick={() => handleDownloadPDF(comp)}
                         disabled={isDownloading}
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-all shadow-md shadow-blue-900/20"
-                        title="Baixar PDF deste comprovante"
+                        title="Baixar PDF idêntico ao emitido originalmente"
                       >
                         {isDownloading ? (
                           <>
@@ -419,7 +497,7 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
                         <button
                           onClick={() => handleLoadToForm(comp)}
                           className="p-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white rounded-lg transition-colors"
-                          title="Carregar dados desta venda no formulário"
+                          title="Recarregar todos os dados desta venda no formulário"
                         >
                           <RotateCcw className="w-3.5 h-3.5" />
                         </button>
@@ -442,39 +520,121 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Expanded Items Drawer */}
-                  {isExpanded && comp.itens_comprovante && comp.itens_comprovante.length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-gray-700/80 bg-gray-900/60 rounded-lg p-3 space-y-2 animate-in fade-in duration-150">
-                      <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
-                        Itens Inclusos na Venda:
-                      </p>
-                      <div className="space-y-1.5">
-                        {comp.itens_comprovante.map((item, idx) => (
-                          <div
-                            key={item.id || idx}
-                            className="flex items-center justify-between text-xs py-1 px-2 rounded bg-gray-800/80 border border-gray-700/40"
-                          >
-                            <div className="flex items-center gap-2 min-w-0 pr-2">
-                              <span className="w-5 h-5 rounded bg-purple-500/20 text-purple-300 font-bold text-[10px] flex items-center justify-center flex-shrink-0">
-                                {item.quantidade}x
-                              </span>
-                              <span className="text-gray-200 uppercase font-medium truncate">
-                                {item.nome_produto}
-                              </span>
-                            </div>
-                            <div className="text-right flex-shrink-0">
-                              <span className="text-green-400 font-bold">
-                                {Number(item.preco * item.quantidade).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                              </span>
-                              {item.quantidade > 1 && (
-                                <span className="text-[10px] text-gray-400 ml-1">
-                                  ({Number(item.preco).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} un)
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        ))}
+                  {/* Expanded Items & Full Metadata Drawer */}
+                  {isExpanded && (
+                    <div className="mt-3 pt-3 border-t border-gray-700/80 bg-gray-900/70 rounded-lg p-3.5 space-y-3 animate-in fade-in duration-150">
+                      
+                      {/* Products List */}
+                      <div>
+                        <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">
+                          Produtos da Venda:
+                        </p>
+                        <div className="space-y-1.5">
+                          {hasSnapshotProducts ? (
+                            snapshot!.products.map((prod, idx) => (
+                              <div
+                                key={prod.code || idx}
+                                className="flex items-center justify-between text-xs py-1.5 px-2.5 rounded bg-gray-800/90 border border-gray-700/50"
+                              >
+                                <div className="flex items-center gap-2 min-w-0 pr-2">
+                                  <span className="w-5 h-5 rounded bg-purple-500/20 text-purple-300 font-bold text-[10px] flex items-center justify-center flex-shrink-0">
+                                    {prod.quantity}x
+                                  </span>
+                                  {prod.code && (
+                                    <span className="text-[10px] font-mono text-gray-400">
+                                      #{prod.code}
+                                    </span>
+                                  )}
+                                  <span className="text-gray-100 uppercase font-medium truncate">
+                                    {prod.name}
+                                  </span>
+                                  {prod.warrantyTime && (
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-900/40 text-blue-300 border border-blue-700/30">
+                                      Garantia: {prod.warrantyTime} {prod.warrantyUnit}
+                                    </span>
+                                  )}
+                                  {prod.isExchange && (
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-900/40 text-amber-300 border border-amber-700/30 font-bold">
+                                      TROCA
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-right flex-shrink-0">
+                                  <span className="text-green-400 font-bold">
+                                    {Number(prod.price * prod.quantity).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                  </span>
+                                  {prod.quantity > 1 && (
+                                    <span className="text-[10px] text-gray-400 ml-1">
+                                      ({Number(prod.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} un)
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            ))
+                          ) : (
+                            validItems.map((item, idx) => (
+                              <div
+                                key={item.id || idx}
+                                className="flex items-center justify-between text-xs py-1.5 px-2.5 rounded bg-gray-800/90 border border-gray-700/50"
+                              >
+                                <div className="flex items-center gap-2 min-w-0 pr-2">
+                                  <span className="w-5 h-5 rounded bg-purple-500/20 text-purple-300 font-bold text-[10px] flex items-center justify-center flex-shrink-0">
+                                    {item.quantidade}x
+                                  </span>
+                                  <span className="text-gray-200 uppercase font-medium truncate">
+                                    {item.nome_produto}
+                                  </span>
+                                </div>
+                                <div className="text-right flex-shrink-0">
+                                  <span className="text-green-400 font-bold">
+                                    {Number(item.preco * item.quantidade).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                  </span>
+                                  {item.quantidade > 1 && (
+                                    <span className="text-[10px] text-gray-400 ml-1">
+                                      ({Number(item.preco).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} un)
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
                       </div>
+
+                      {/* Snapshot Metadata Box if available */}
+                      {snapshot && (
+                        <div className="pt-2 border-t border-gray-800 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-gray-400 bg-gray-950/40 p-2.5 rounded-lg">
+                          <div>
+                            <span className="font-semibold text-gray-300">Cliente:</span> {snapshot.name || 'NÃO INFORMADO'}
+                            {snapshot.cpf && <span className="ml-2 font-mono">({snapshot.cpf})</span>}
+                          </div>
+                          <div>
+                            <span className="font-semibold text-gray-300">Telefones:</span> {[snapshot.contact1, snapshot.contact2].filter(Boolean).join(' / ') || 'NÃO INFORMADO'}
+                          </div>
+                          {(snapshot.street || snapshot.city) && (
+                            <div className="sm:col-span-2">
+                              <span className="font-semibold text-gray-300">Endereço:</span> {[snapshot.street, snapshot.number, snapshot.neighborhood, snapshot.city, snapshot.complement].filter(Boolean).join(', ')}
+                            </div>
+                          )}
+                          {(snapshot.discountValue > 0 || (snapshot.bundleDiscount && snapshot.bundleDiscount > 0)) && (
+                            <div>
+                              <span className="font-semibold text-amber-400">Desconto Aplicado:</span> {Number((snapshot.discountValue || 0) + (snapshot.bundleDiscount || 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                              {snapshot.bundleLabel && <span className="ml-1 text-gray-400">({snapshot.bundleLabel})</span>}
+                            </div>
+                          )}
+                          {snapshot.shippingValue && snapshot.shippingValue > 0 ? (
+                            <div>
+                              <span className="font-semibold text-blue-400">Frete:</span> {Number(snapshot.shippingValue).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </div>
+                          ) : null}
+                          {snapshot.observation && (
+                            <div className="sm:col-span-2 pt-1 border-t border-gray-800/60 text-gray-400 italic">
+                              <span className="font-semibold text-gray-300 not-italic">Observação:</span> {snapshot.observation}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                     </div>
                   )}
                 </div>

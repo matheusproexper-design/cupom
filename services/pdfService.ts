@@ -94,8 +94,8 @@ export const createPDFDoc = async (data: ReceiptData): Promise<jsPDF> => {
   doc.setFontSize(8);
   doc.setTextColor(COLORS.textGray);
   doc.setFont("helvetica", "normal");
-  const dateStr = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  const timeStr = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const dateStr = data.emissionDate || new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const timeStr = data.emissionTime || new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   doc.text(`Emissão: ${dateStr} às ${timeStr}`, pageWidth / 2, y, { align: "center" });
 
   y += 6; // Reduced spacing
@@ -207,7 +207,19 @@ export const createPDFDoc = async (data: ReceiptData): Promise<jsPDF> => {
   };
 
   // --- ROW 1: Date, Client, CPF ---
-  const dateVal = data.date ? new Date(data.date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : dateStr;
+  let dateVal = dateStr;
+  if (data.date) {
+    if (data.date.includes('/')) {
+      dateVal = data.date;
+    } else {
+      try {
+        const parsed = new Date(data.date + 'T12:00:00');
+        dateVal = !isNaN(parsed.getTime()) ? parsed.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : data.date;
+      } catch {
+        dateVal = data.date;
+      }
+    }
+  }
   
   drawDynamicRow([
       { label: "DATA DO PEDIDO", text: dateVal, min: 30 },
