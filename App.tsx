@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { INITIAL_DATA, ReceiptData, PRODUCTS_LIST, PRODUCT_CATALOG, Product, CatalogItem } from './types';
+import { INITIAL_DATA, ReceiptData, PRODUCTS_LIST, PRODUCT_CATALOG, Product, CatalogItem, formatSafeDate } from './types';
 import { generateReceiptPDF, getReceiptBlob } from './services/pdfService';
 import { generateClientMessage, parseReceiptFromText, parseReceiptLocally } from './services/geminiService';
 import { supabase } from './services/supabase';
@@ -2186,7 +2186,7 @@ export default function App() {
 
                     <div className="border border-gray-300 mb-6 text-sm">
                         <div className="grid grid-cols-[20%_55%_25%] border-b border-gray-300">
-                            <PreviewCell label="DATA DO PEDIDO" value={data.date ? new Date(data.date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'} className="border-r border-gray-300" />
+                            <PreviewCell label="DATA DO PEDIDO" value={data.date ? formatSafeDate(data.date) : '-'} className="border-r border-gray-300" />
                             <PreviewCell label="CLIENTE" value={data.name} className="border-r border-gray-300" />
                             <PreviewCell label="CPF/CNPJ" value={data.cpf} />
                         </div>

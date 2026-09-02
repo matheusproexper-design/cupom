@@ -1,7 +1,7 @@
 
 
 import { jsPDF } from 'jspdf';
-import { ReceiptData } from '../types';
+import { ReceiptData, formatSafeDate, INITIAL_DATA } from '../types';
 import QRCode from 'qrcode';
 import JsBarcode from 'jsbarcode';
 
@@ -26,7 +26,58 @@ const COLORS = {
   stampBlue: '#1e3a8a', // Dark Blue for stamp
 };
 
-export const createPDFDoc = async (data: ReceiptData): Promise<jsPDF> => {
+export const createPDFDoc = async (rawInputData: ReceiptData): Promise<jsPDF> => {
+  let data = { ...rawInputData };
+
+  // 1. Desempacota o snapshot se ele foi passado como um item da lista de produtos
+  const embeddedSnapshotProduct = (data.products || []).find(p => 
+    p && p.name && p.name.includes('__BELCONFORT_RECEIPT_SNAPSHOT__:')
+  );
+  if (embeddedSnapshotProduct) {
+    try {
+      const idx = embeddedSnapshotProduct.name.indexOf('__BELCONFORT_RECEIPT_SNAPSHOT__:');
+      const jsonStr = embeddedSnapshotProduct.name.substring(idx + '__BELCONFORT_RECEIPT_SNAPSHOT__:'.length);
+      const parsed = JSON.parse(jsonStr);
+      if (parsed && typeof parsed === 'object') {
+        data = {
+          ...INITIAL_DATA,
+          ...parsed,
+          ...data, // preserva overrides explícitos se não forem os fallbacks
+          name: (data.name && data.name !== 'CLIENTE' && data.name !== 'CLIENTE NÃO INFORMADO') ? data.name : parsed.name,
+          saleCode: (data.saleCode && data.saleCode.trim()) || parsed.saleCode || '',
+          salesperson: (data.salesperson && data.salesperson.trim()) || parsed.salesperson || '',
+          date: (data.date && !data.date.toLowerCase().includes('invalid')) ? data.date : (parsed.date || ''),
+          cpf: data.cpf || parsed.cpf || '',
+          email: data.email || parsed.email || '',
+          street: data.street || parsed.street || '',
+          number: data.number || parsed.number || '',
+          neighborhood: data.neighborhood || parsed.neighborhood || '',
+          city: data.city || parsed.city || '',
+          complement: data.complement || parsed.complement || '',
+          contact1: data.contact1 || parsed.contact1 || '',
+          contact2: data.contact2 || parsed.contact2 || '',
+          observation: data.observation || parsed.observation || '',
+          paymentMethod: (data.paymentMethod && data.paymentMethod !== 'NÃO ESPECIFICADO') ? data.paymentMethod : (parsed.paymentMethod || ''),
+          discountType: parsed.discountType || data.discountType,
+          discountValue: parsed.discountValue ?? data.discountValue,
+          shippingValue: parsed.shippingValue ?? data.shippingValue,
+          bundleDiscount: parsed.bundleDiscount ?? data.bundleDiscount,
+          bundleLabel: parsed.bundleLabel || data.bundleLabel,
+          emissionDate: data.emissionDate || parsed.emissionDate,
+          emissionTime: data.emissionTime || parsed.emissionTime,
+          products: Array.isArray(parsed.products) && parsed.products.length > 0 ? parsed.products : data.products
+        };
+      }
+    } catch (e) {
+      console.error('Erro ao desembalar snapshot no pdfService:', e);
+    }
+  }
+
+  // 2. Filtra estritamente qualquer item de snapshot ou controle interno da tabela de produtos
+  data.products = (data.products || []).filter(p => 
+    p && p.name && !p.name.includes('__BELCONFORT_RECEIPT_SNAPSHOT__') && !p.name.startsWith('__')
+  );
+
   const doc = new jsPDF();
   
   // Settings
@@ -207,19 +258,7 @@ export const createPDFDoc = async (data: ReceiptData): Promise<jsPDF> => {
   };
 
   // --- ROW 1: Date, Client, CPF ---
-  let dateVal = dateStr;
-  if (data.date) {
-    if (data.date.includes('/')) {
-      dateVal = data.date;
-    } else {
-      try {
-        const parsed = new Date(data.date + 'T12:00:00');
-        dateVal = !isNaN(parsed.getTime()) ? parsed.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : data.date;
-      } catch {
-        dateVal = data.date;
-      }
-    }
-  }
+  const dateVal = formatSafeDate(data.date, dateStr);
   
   drawDynamicRow([
       { label: "DATA DO PEDIDO", text: dateVal, min: 30 },

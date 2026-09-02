@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabase';
 import { generateReceiptPDF } from '../services/pdfService';
-import { ReceiptData, INITIAL_DATA } from '../types';
+import { ReceiptData, INITIAL_DATA, formatSafeDate } from '../types';
 import { 
   X, Search, Download, Loader2, RefreshCw, 
   Calendar, User, ShoppingBag, DollarSign, 
@@ -39,6 +39,7 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
   onLoadReceipt,
 }) => {
   const [comprovantes, setComprovantes] = useState<Comprovante[]>([]);
+  const [serverSnapshots, setServerSnapshots] = useState<Record<string, ReceiptData>>({});
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
@@ -54,6 +55,7 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
   const fetchHistory = async () => {
     setLoading(true);
     try {
+      // 1. Carrega comprovantes do Supabase
       const { data, error } = await supabase
         .from('comprovantes')
         .select('*, itens_comprovante(*)')
@@ -63,6 +65,19 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
         console.error('[Supabase] Erro ao carregar histórico:', error);
       } else if (data) {
         setComprovantes(data as Comprovante[]);
+      }
+
+      // 2. Carrega snapshots do servidor
+      try {
+        const snapRes = await fetch('/api/receipts-snapshots');
+        if (snapRes.ok) {
+          const snaps = await snapRes.json();
+          if (snaps && typeof snaps === 'object') {
+            setServerSnapshots(snaps);
+          }
+        }
+      } catch (snapErr) {
+        console.warn('Erro ao carregar snapshots do servidor:', snapErr);
       }
     } catch (err) {
       console.error('[Supabase] Falha ao consultar comprovantes:', err);
@@ -79,15 +94,22 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Extrai o snapshot completo de emissão se disponível no comprovante ou no cache local
+  // Extrai o snapshot completo de emissão se disponível no comprovante, no servidor ou no cache local
   const getSnapshotFromComprovante = (comp: Comprovante): ReceiptData | null => {
+    // 1. Snapshot persistido no backend
+    if (serverSnapshots && serverSnapshots[comp.id]) {
+      return serverSnapshots[comp.id];
+    }
+
+    // 2. Snapshot salvo no banco (itens_comprovante)
     if (comp.itens_comprovante && comp.itens_comprovante.length > 0) {
       const snapshotItem = comp.itens_comprovante.find(i => 
-        i.nome_produto && i.nome_produto.startsWith('__BELCONFORT_RECEIPT_SNAPSHOT__:')
+        i.nome_produto && i.nome_produto.includes('__BELCONFORT_RECEIPT_SNAPSHOT__:')
       );
-      if (snapshotItem) {
+      if (snapshotItem && snapshotItem.nome_produto) {
         try {
-          const jsonStr = snapshotItem.nome_produto.replace('__BELCONFORT_RECEIPT_SNAPSHOT__:', '');
+          const idx = snapshotItem.nome_produto.indexOf('__BELCONFORT_RECEIPT_SNAPSHOT__:');
+          const jsonStr = snapshotItem.nome_produto.substring(idx + '__BELCONFORT_RECEIPT_SNAPSHOT__:'.length);
           const parsed = JSON.parse(jsonStr);
           if (parsed && typeof parsed === 'object') {
             return parsed as ReceiptData;
@@ -98,7 +120,7 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
       }
     }
 
-    // Fallback: verificar cache em localStorage
+    // 3. Fallback: verificar cache em localStorage
     try {
       const stored = JSON.parse(localStorage.getItem('belconfort_receipt_snapshots') || '{}');
       if (stored[comp.id]) {
@@ -116,18 +138,24 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
       return {
         ...INITIAL_DATA,
         ...snapshot,
-        products: Array.isArray(snapshot.products) ? snapshot.products : []
+        date: formatSafeDate(snapshot.date, formatSafeDate(comp.data_emissao)),
+        emissionDate: formatSafeDate(snapshot.emissionDate, formatSafeDate(comp.data_emissao)),
+        products: (Array.isArray(snapshot.products) ? snapshot.products : []).filter(p => 
+          p && p.name && !p.name.includes('__BELCONFORT_RECEIPT_SNAPSHOT__') && !p.name.startsWith('__')
+        )
       };
     }
 
     // Fallback gracioso para registros legados sem snapshot
     const dateObj = comp.data_emissao ? new Date(comp.data_emissao) : new Date();
-    const formattedDate = dateObj.toLocaleDateString('pt-BR');
-    const emissionDate = dateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    const emissionTime = dateObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    const formattedDate = formatSafeDate(comp.data_emissao);
+    const emissionDate = formatSafeDate(comp.data_emissao);
+    const emissionTime = !isNaN(dateObj.getTime()) 
+      ? dateObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) 
+      : new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
     const validItems = (comp.itens_comprovante || []).filter(i => 
-      !i.nome_produto?.startsWith('__BELCONFORT_RECEIPT_SNAPSHOT__:')
+      i.nome_produto && !i.nome_produto.includes('__BELCONFORT_RECEIPT_SNAPSHOT__') && !i.nome_produto.startsWith('__')
     );
 
     const prods = validItems.length > 0
@@ -172,7 +200,9 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
     const matchesId = (c.id || '').toLowerCase().includes(term);
     
     // Itens reais do comprovante (excluindo snapshot)
-    const validItems = (c.itens_comprovante || []).filter(i => !i.nome_produto?.startsWith('__BELCONFORT_RECEIPT_SNAPSHOT__:'));
+    const validItems = (c.itens_comprovante || []).filter(i => 
+      i && i.nome_produto && !i.nome_produto.includes('__BELCONFORT_RECEIPT_SNAPSHOT__') && !i.nome_produto.startsWith('__')
+    );
     const matchesItem = validItems.some(i => 
       (i.nome_produto || '').toLowerCase().includes(term)
     );
@@ -237,6 +267,18 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
         alert('Erro ao excluir comprovante: ' + error.message);
       } else {
         setComprovantes(prev => prev.filter(c => c.id !== id));
+        // Remove do cache de snapshots do servidor e local
+        try {
+          await fetch(`/api/receipts-snapshots/${id}`, { method: 'DELETE' });
+          setServerSnapshots(prev => {
+            const next = { ...prev };
+            delete next[id];
+            return next;
+          });
+          const stored = JSON.parse(localStorage.getItem('belconfort_receipt_snapshots') || '{}');
+          delete stored[id];
+          localStorage.setItem('belconfort_receipt_snapshots', JSON.stringify(stored));
+        } catch {}
       }
     } catch (err) {
       console.error('Erro ao excluir:', err);
@@ -379,7 +421,7 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
             filteredList.map((comp) => {
               const snapshot = getSnapshotFromComprovante(comp);
               const validItems = (comp.itens_comprovante || []).filter(i => 
-                !i.nome_produto?.startsWith('__BELCONFORT_RECEIPT_SNAPSHOT__:')
+                i && i.nome_produto && !i.nome_produto.includes('__BELCONFORT_RECEIPT_SNAPSHOT__') && !i.nome_produto.startsWith('__')
               );
               const hasSnapshotProducts = Boolean(snapshot?.products && snapshot.products.length > 0);
               const itemsCount = hasSnapshotProducts ? snapshot!.products.length : validItems.length;

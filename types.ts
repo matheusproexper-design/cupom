@@ -68,6 +68,45 @@ export const INITIAL_DATA: ReceiptData = {
   emissionTime: '',
 };
 
+export function formatSafeDate(val?: string | null, fallbackDateStr?: string): string {
+  if (!val || typeof val !== 'string') {
+    return fallbackDateStr || new Date().toLocaleDateString('pt-BR');
+  }
+  const trimmed = val.trim();
+  if (!trimmed || trimmed.toLowerCase().includes('invalid')) {
+    return fallbackDateStr || new Date().toLocaleDateString('pt-BR');
+  }
+  // If in DD/MM/YYYY format
+  if (trimmed.includes('/')) {
+    const parts = trimmed.split('/');
+    if (parts.length === 3) {
+      const d = parts[0].padStart(2, '0');
+      const m = parts[1].padStart(2, '0');
+      const y = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
+      return `${d}/${m}/${y}`;
+    }
+    return trimmed;
+  }
+  // If in YYYY-MM-DD format
+  if (trimmed.includes('-')) {
+    const parts = trimmed.split('-');
+    if (parts.length === 3 && parts[0].length === 4) {
+      const y = parts[0];
+      const m = parts[1].padStart(2, '0');
+      const d = parts[2].substring(0, 2).padStart(2, '0');
+      return `${d}/${m}/${y}`;
+    }
+  }
+  // Try standard parsing
+  try {
+    const parsed = new Date(trimmed);
+    if (!isNaN(parsed.getTime())) {
+      return parsed.toLocaleDateString('pt-BR');
+    }
+  } catch {}
+  return fallbackDateStr || new Date().toLocaleDateString('pt-BR');
+}
+
 // Updated Catalog with new prices for Bases
 export const PRODUCT_CATALOG: CatalogItem[] = [
   { name: "ACESSÓRIO ENCOSTO DINO 62CM 52X78 BEGE", price: 150.00 },

@@ -552,6 +552,18 @@ async function startServer() {
     res.json({ success: true });
   });
 
+  app.delete("/api/receipts-snapshots/:id", (req, res) => {
+    const { id } = req.params;
+    if (id) {
+      const all = loadSnapshots();
+      if (all[id]) {
+        delete all[id];
+        saveSnapshots(all);
+      }
+    }
+    res.json({ success: true });
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
