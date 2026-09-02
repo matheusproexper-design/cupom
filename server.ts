@@ -3,12 +3,45 @@ import path from "path";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
+import { createClient } from "@supabase/supabase-js";
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
   app.use(express.json());
+
+  // Supabase client for official product catalog lookup
+  const supabaseUrl = 'https://qdjmxoaxxgdpxgtpbaqt.supabase.co';
+  const supabaseKey = 'sb_publishable_q47gD-GrwsLfWh-yxD9kSA_uvZamJrZ';
+  const supabase = createClient(supabaseUrl, supabaseKey);
+
+  let cachedSupabaseProducts: Array<{ id?: string; codigo?: string; nome: string; preco: number }> = [];
+  let lastSupabaseFetchTime = 0;
+
+  async function getSupabaseCatalog(): Promise<Array<{ id?: string; codigo?: string; nome: string; preco: number }>> {
+    const now = Date.now();
+    if (cachedSupabaseProducts.length > 0 && (now - lastSupabaseFetchTime < 60000)) {
+      return cachedSupabaseProducts;
+    }
+    try {
+      const { data, error } = await supabase
+        .from('produtos')
+        .select('id, codigo, nome, preco')
+        .order('nome', { ascending: true });
+      if (!error && data && data.length > 0) {
+        cachedSupabaseProducts = data;
+        lastSupabaseFetchTime = now;
+        console.log(`[Supabase Server] ${data.length} produtos carregados do Supabase.`);
+      }
+    } catch (err) {
+      console.warn('[Supabase Server] Erro ao consultar produtos:', err);
+    }
+    return cachedSupabaseProducts;
+  }
+
+  // Pre-load catalog on startup
+  getSupabaseCatalog().catch(() => {});
 
   // Helper for server-side Gemini client
   const getAi = () => {
@@ -23,8 +56,8 @@ async function startServer() {
     });
   };
 
-  // Candidate models for automatic fallback in case of high demand / 503
-  const FALLBACK_MODELS = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-3.7-flash', 'gemini-2.5-pro'];
+  // Candidate models for automatic fallback in case of high demand
+  const FALLBACK_MODELS = ['gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.6-flash'];
 
   // Helper to call Gemini with multi-model fallback
   async function generateContentWithFallback(ai: any, params: {
@@ -51,12 +84,12 @@ async function startServer() {
   }
 
   // Deterministic intelligent local parser fallback when AI is experiencing high demand
-  function parseReceiptWithRegex(text: string, catalogNames: string[] = []): any {
+  function parseReceiptWithRegex(text: string, catalogItems: Array<{ codigo?: string; nome: string; preco?: number }> = []): any {
     const clean = text.replace(/\r\n/g, '\n');
     const lines = clean.split('\n').map(l => l.trim()).filter(Boolean);
 
     const clientData: any = {};
-    const items: Array<{ name: string; quantity: number; price?: number }> = [];
+    const items: Array<{ code?: string; name: string; quantity: number; price?: number }> = [];
 
     // Extract Name
     const nameMatch = clean.match(/(?:cliente|nome|comprador|destinat[aá]rio)[:\s-]*([^\n,;]+)/i);
@@ -122,27 +155,27 @@ async function startServer() {
     // Extract Products from catalog or lines
     for (const line of lines) {
       const isProdLine = /(?:produto|item|colch[aã]o|base|bicama|cabeceira|travesseiro|fog[aã]o|unibox|arm[aá]rio)/i.test(line);
-      if (isProdLine || catalogNames.some(cat => line.toUpperCase().includes(cat.toUpperCase().slice(0, 15)))) {
+      if (isProdLine || catalogItems.some(cat => line.toUpperCase().includes(cat.nome.toUpperCase().slice(0, 15)))) {
         const qtyMatch = line.match(/^(\d+)x?\s+/i) || line.match(/(\d+)\s+(?:unidades?|un|pe[cç]as?|x)/i) || line.match(/\b(\d+)\b/);
         const qty = qtyMatch ? parseInt(qtyMatch[1], 10) : 1;
 
-        let matchedName = '';
-        for (const catName of catalogNames) {
-          const keywords = catName.toUpperCase().split(' ').filter(k => k.length > 2);
+        let matchedItem: { codigo?: string; nome: string; preco?: number } | null = null;
+        for (const cat of catalogItems) {
+          const keywords = cat.nome.toUpperCase().split(' ').filter(k => k.length > 2);
           const matchCount = keywords.filter(k => line.toUpperCase().includes(k)).length;
-          if (matchCount >= 2 || line.toUpperCase().includes(catName.toUpperCase())) {
-            matchedName = catName;
+          if (matchCount >= 2 || line.toUpperCase().includes(cat.nome.toUpperCase())) {
+            matchedItem = cat;
             break;
           }
         }
 
-        if (!matchedName) {
-          matchedName = line.replace(/^(?:produtos?|itens?|item|\d+x?|\d+)\s*[:\-]?\s*/i, '').trim().toUpperCase();
-        }
+        let matchedName = matchedItem ? matchedItem.nome : line.replace(/^(?:produtos?|itens?|item|\d+x?|\d+)\s*[:\-]?\s*/i, '').trim().toUpperCase();
 
         if (matchedName && matchedName.length > 3 && !/^(?:cliente|endere[cç]o|valor|pagamento|data|telefone)/i.test(matchedName)) {
           items.push({
+            code: matchedItem?.codigo || Math.floor(100000 + Math.random() * 900000).toString(),
             name: matchedName,
+            price: matchedItem?.preco || 0,
             quantity: isNaN(qty) || qty < 1 ? 1 : qty,
           });
         }
@@ -152,6 +185,7 @@ async function startServer() {
     // Check for gifts like "travesseiro"
     if (/travesseiro/i.test(clean) && !items.some(i => /travesseiro/i.test(i.name))) {
       items.push({
+        code: "612212",
         name: "TRAVESSEIRO FLOCOS CONFORTO 20CM 60X40 BRANCO",
         quantity: 1,
         price: 0
@@ -161,7 +195,7 @@ async function startServer() {
     return { clientData, items };
   }
 
-  // Fast AI import route
+  // Fast AI import route powered by Supabase catalog
   app.post("/api/parse-receipt", async (req, res) => {
     try {
       const { text, catalogNames = [] } = req.body;
@@ -170,17 +204,43 @@ async function startServer() {
       }
 
       const ai = getAi();
-      const compactCatalog = (catalogNames as string[]).slice(0, 150).join(", ");
+      
+      // 1. Fetch live Supabase products catalog (source of truth)
+      const supabaseProducts = await getSupabaseCatalog();
+      
+      // Merge with client-supplied names if any
+      const catalogMap = new Map<string, { codigo?: string; nome: string; preco?: number }>();
+      supabaseProducts.forEach(p => {
+        catalogMap.set(p.nome.trim().toUpperCase(), p);
+      });
+      (catalogNames as string[]).forEach(n => {
+        const u = n.trim().toUpperCase();
+        if (!catalogMap.has(u)) {
+          catalogMap.set(u, { nome: u, preco: 0 });
+        }
+      });
+
+      const catalogItems = Array.from(catalogMap.values());
+      const catalogFormattedList = catalogItems
+        .map(p => `- ${p.nome}${p.preco ? ` | R$ ${p.preco}` : ''}${p.codigo ? ` [Cód: ${p.codigo}]` : ''}`)
+        .join('\n');
 
       const prompt = `
-        Analise a ficha técnica/texto de venda abaixo e extraia com precisão:
+        Você é um extrator de inteligência artificial de alta precisão da BelConfort.
         
-        DIRETRIZES DE EXTRAÇÃO RÁPIDA:
-        1. Nome, CPF/CNPJ, Endereço (Rua, Número, Bairro, Cidade), Telefones (contato1, contato2) e Método de Pagamento.
-        2. Mapeie cada produto para o nome correspondente no catálogo oficial: [${compactCatalog}]
-        3. BRINDES: Se menciona "travesseiro" como cortesia/brinde, mapeie para: "TRAVESSEIRO FLOCOS CONFORTO 20CM 60X40 BRANCO".
+        IMPORTANTE: OS PRODUTOS OFICIAIS DA BELCONFORT ESTÃO NO CATÁLOGO DO SUPABASE ABAIXO:
+        === CATÁLOGO OFICIAL NO SUPABASE (TABELA PRODUTOS) ===
+        ${catalogFormattedList}
+        ======================================================
 
-        TEXTO DO CLIENTE:
+        DIRETRIZES ESSENCIAIS DE EXTRAÇÃO:
+        1. Para cada produto do pedido, você DEVE encontrar a correspondência EXATA com um item do catálogo no Supabase acima.
+        2. Retorne o nome EXATO conforme registrado no Supabase (ex: "COLCHÃO D33 20CM SOLTEIRO BEGE", "BASE BOX BILÚ 40CM CASAL PRETO", etc.).
+        3. Preencha o código (code) e o preço (price) conforme o catálogo do Supabase, a não ser que haja um preço unitário específico negociado no texto.
+        4. BRINDES: Se o cliente ganhou travesseiro de cortesia ou brinde, adicione "TRAVESSEIRO FLOCOS CONFORTO 20CM 60X40 BRANCO" com price: 0 e a quantidade ganha.
+        5. DADOS DO CLIENTE: Extraia nome, cpf/cnpj, telefones (contact1, contact2), endereço completo (street, number, neighborhood, city, complement), data e forma de pagamento (PIX, CARTÃO, DINHEIRO, etc.).
+
+        TEXTO DO PEDIDO:
         ${text}
       `;
 
@@ -189,7 +249,7 @@ async function startServer() {
           contents: prompt,
           config: {
             temperature: 0.1,
-            systemInstruction: "Você é um extrator ultrarrápido de dados de vendas da BelConfort. Extraia todos os dados do cliente e todos os itens do pedido com precisão.",
+            systemInstruction: "Você é um assistente de vendas da BelConfort especializado em reconhecer e mapear produtos no catálogo do Supabase.",
             responseMimeType: "application/json",
             responseSchema: {
               type: Type.OBJECT,
@@ -218,6 +278,7 @@ async function startServer() {
                   items: {
                     type: Type.OBJECT,
                     properties: {
+                      code: { type: Type.STRING },
                       name: { type: Type.STRING },
                       quantity: { type: Type.NUMBER },
                       price: { type: Type.NUMBER }
@@ -232,20 +293,36 @@ async function startServer() {
         const jsonText = response.text;
         if (jsonText) {
           const parsed = JSON.parse(jsonText);
+          
+          // Post-process items to ensure Supabase codes and prices are accurate
+          if (parsed.items && Array.isArray(parsed.items)) {
+            parsed.items = parsed.items.map((item: any) => {
+              const matched = catalogItems.find(c => c.nome.toUpperCase() === (item.name || '').trim().toUpperCase()) ||
+                              catalogItems.find(c => c.nome.toUpperCase().includes((item.name || '').trim().toUpperCase()));
+              return {
+                code: item.code || matched?.codigo || Math.floor(100000 + Math.random() * 900000).toString(),
+                name: matched ? matched.nome : (item.name || '').toUpperCase(),
+                quantity: item.quantity || 1,
+                price: (item.price !== undefined && item.price !== null && item.price > 0) ? item.price : (matched?.preco || item.price || 0)
+              };
+            });
+          }
+
           return res.json(parsed);
         }
       } catch (aiErr) {
-        console.warn("[Server Gemini Fallback] AI models busy, using smart regex fallback:", aiErr);
-        const fallbackResult = parseReceiptWithRegex(text, catalogNames);
+        console.warn("[Server Gemini Fallback] IA ocupada, usando extrator com catálogo do Supabase:", aiErr);
+        const fallbackResult = parseReceiptWithRegex(text, catalogItems);
         return res.json(fallbackResult);
       }
 
-      const fallbackResult = parseReceiptWithRegex(text, catalogNames);
+      const fallbackResult = parseReceiptWithRegex(text, catalogItems);
       return res.json(fallbackResult);
     } catch (error: any) {
       console.error("[Server Error] Parse receipt failed:", error);
       try {
-        const fallbackResult = parseReceiptWithRegex(req.body.text || '', req.body.catalogNames || []);
+        const supabaseProducts = await getSupabaseCatalog();
+        const fallbackResult = parseReceiptWithRegex(req.body.text || '', supabaseProducts);
         return res.json(fallbackResult);
       } catch (fErr) {
         res.status(500).json({ error: "Erro ao processar pedido." });
@@ -288,8 +365,7 @@ async function startServer() {
         Escreva uma mensagem curta para WhatsApp com agradecimento e emojis.
       `;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.7-flash',
+      const response = await generateContentWithFallback(ai, {
         contents: prompt,
         config: {
           temperature: 0.2,
@@ -375,6 +451,20 @@ async function startServer() {
         console.log(`[Server] Gravado no custom_catalog.json: ${formattedName}`);
       }
 
+      // 3. Sync with Supabase produtos table
+      try {
+        await supabase.from('produtos').insert([{
+          codigo: Math.floor(100000 + Math.random() * 900000).toString(),
+          nome: formattedName,
+          preco: price
+        }]);
+        // Invalidate server cache so next parse has the new item
+        cachedSupabaseProducts = [];
+        console.log(`[Server] Gravado no Supabase: ${formattedName}`);
+      } catch (sbErr) {
+        console.warn('[Server] Não foi possível persistir no Supabase:', sbErr);
+      }
+
       res.json({ success: true, message: "Produto cadastrado e sincronizado com sucesso!" });
     } catch (error: any) {
       console.error("[Server Error] Falha ao atualizar catálogo:", error);
@@ -416,6 +506,9 @@ async function startServer() {
         saveCustomCatalog(catalog);
         console.log(`[Server] Removido do custom_catalog.json: ${formattedName}`);
       }
+
+      // Invalidate server cache
+      cachedSupabaseProducts = [];
 
       res.json({ success: true, message: "Produto removido com sucesso!" });
     } catch (error: any) {

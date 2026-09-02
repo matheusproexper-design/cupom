@@ -11,6 +11,7 @@ export interface Product {
 }
 
 export interface CatalogItem {
+  code?: string;
   name: string;
   price: number;
 }

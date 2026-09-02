@@ -66,24 +66,29 @@ export const generateClientMessage = async (data: ReceiptData): Promise<string> 
     Escreva uma mensagem curta para WhatsApp com agradecimento e emojis.
   `;
 
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.7-flash',
-      contents: prompt,
-      config: {
-        temperature: 0.2,
-        systemInstruction: "Você é um assistente de elite da BelConfort. Seu tom é executivo, acolhedor e focado em eficiência."
-      }
-    });
+  for (const modelName of FALLBACK_MODELS) {
+    try {
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: prompt,
+        config: {
+          temperature: 0.2,
+          systemInstruction: "Você é um assistente de elite da BelConfort. Seu tom é executivo, acolhedor e focado em eficiência."
+        }
+      });
 
-    return response.text || "Não foi possível gerar a mensagem.";
-  } catch (error: any) {
-    console.error("Error generating message:", error);
-    throw error;
+      if (response && response.text) {
+        return response.text;
+      }
+    } catch (error: any) {
+      console.warn(`[Gemini Client] Model ${modelName} unavailable for message:`, error?.message || error);
+    }
   }
+
+  return "Não foi possível gerar a mensagem automaticamente no momento.";
 };
 
-const FALLBACK_MODELS = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-3.7-flash', 'gemini-2.5-pro'];
+const FALLBACK_MODELS = ['gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.6-flash'];
 
 // Deterministic intelligent local parser fallback when AI is experiencing high demand
 export function parseReceiptLocally(text: string, catalogNames: string[] = []): any {
@@ -218,17 +223,22 @@ export const parseReceiptFromText = async (text: string, catalogNames: string[] 
   }
 
   const ai = getAiClient();
-  const compactCatalog = catalogNames.slice(0, 150).join(", ");
+  const catalogListText = catalogNames.map(name => `- ${name}`).join("\n");
 
   const prompt = `
-    Analise a ficha técnica/texto de venda abaixo e extraia com precisão:
+    Você é um assistente de vendas da BelConfort especializado em processamento de pedidos.
     
-    DIRETRIZES DE EXTRAÇÃO RÁPIDA:
-    1. Nome, CPF/CNPJ, Endereço (Rua, Número, Bairro, Cidade), Telefones (contato1, contato2) e Método de Pagamento.
-    2. Mapeie cada produto para o nome correspondente no catálogo oficial: [${compactCatalog}]
-    3. BRINDES: Se menciona "travesseiro" como cortesia/brinde, mapeie para: "TRAVESSEIRO FLOCOS CONFORTO 20CM 60X40 BRANCO".
+    IMPORTANTE: OS PRODUTOS OFICIAIS QUE VOCÊ DEVE PROCURAR ESTÃO CADASTRADOS NO CATÁLOGO DO SUPABASE ABAIXO:
+    === CATÁLOGO OFICIAL NO SUPABASE (TABELA PRODUTOS) ===
+    ${catalogListText}
+    ======================================================
+    
+    DIRETRIZES DE EXTRAÇÃO:
+    1. Para cada produto do pedido, faça a correspondência com o nome EXATO correspondente no Catálogo do Supabase acima.
+    2. Extraia Nome do cliente, CPF/CNPJ, Endereço (Rua, Número, Bairro, Cidade, Complemento), Telefones (contato1, contato2), Data e Método de Pagamento.
+    3. BRINDES: Se menciona "travesseiro" como cortesia/brinde, mapeie para: "TRAVESSEIRO FLOCOS CONFORTO 20CM 60X40 BRANCO" com price: 0.
 
-    TEXTO:
+    TEXTO DO PEDIDO:
     ${text}
   `;
 

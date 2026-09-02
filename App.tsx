@@ -138,11 +138,30 @@ export default function App() {
     ].filter(Boolean).join(" ").toUpperCase();
   }, [newProdCategoria, newProdProduto, newProdAltura, newProdTamanho, newProdCor]);
 
-  // Combined product catalog
+  // Catalog tab & Supabase product catalog state (loaded directly from Supabase produtos table)
+  const [allSupabaseCatalog, setAllSupabaseCatalog] = useState<Array<{ id: string; codigo: string; nome: string; preco: number; criado_em?: string }>>([]);
+  const [isLoadingCatalog, setIsLoadingCatalog] = useState(false);
+  const [isSavingCustomProduct, setIsSavingCustomProduct] = useState(false);
+  const [customProductSuccess, setCustomProductSuccess] = useState<string | null>(null);
+  const [catalogSearchTerm, setCatalogSearchTerm] = useState("");
+
+  // Combined product catalog: prioritizes live official products from Supabase table 'produtos'
   const fullCatalog = React.useMemo(() => {
-    const combined = [...customProducts, ...PRODUCT_CATALOG];
+    // Map Supabase products (code, name, price)
+    const supabaseItems: CatalogItem[] = allSupabaseCatalog.map(p => ({
+      code: p.codigo,
+      name: p.nome,
+      price: Number(p.preco) || 0
+    }));
+
+    // If Supabase catalog has items, use them as the primary catalog; fallback to static list if still loading
+    const baseList = supabaseItems.length > 0 ? supabaseItems : PRODUCT_CATALOG;
+    const existingNames = new Set(baseList.map(p => p.name.toUpperCase()));
+    const additional = customProducts.filter(p => !existingNames.has(p.name.toUpperCase()));
+
+    const combined = [...baseList, ...additional];
     return combined.sort((a, b) => a.name.localeCompare(b.name));
-  }, [customProducts]);
+  }, [allSupabaseCatalog, customProducts]);
 
   const fullProductsList = React.useMemo(() => {
     return fullCatalog.map(p => p.name);
@@ -172,13 +191,6 @@ export default function App() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [supabaseProducts, setSupabaseProducts] = useState<Array<{ id?: string; codigo?: string; nome: string; preco: number }>>([]);
   const [isSearchingSupabase, setIsSearchingSupabase] = useState(false);
-
-  // Catalog tab & Supabase product catalog state
-  const [allSupabaseCatalog, setAllSupabaseCatalog] = useState<Array<{ id: string; codigo: string; nome: string; preco: number; criado_em?: string }>>([]);
-  const [isLoadingCatalog, setIsLoadingCatalog] = useState(false);
-  const [isSavingCustomProduct, setIsSavingCustomProduct] = useState(false);
-  const [customProductSuccess, setCustomProductSuccess] = useState<string | null>(null);
-  const [catalogSearchTerm, setCatalogSearchTerm] = useState("");
 
   // State for discount and shipping input as string
   const [discountInput, setDiscountInput] = useState("");
@@ -633,14 +645,17 @@ export default function App() {
       let updatedProducts = [...data.products];
       
       if (result.items && Array.isArray(result.items)) {
-        result.items.forEach((item: { name: string, quantity: number, price?: number }) => {
+        result.items.forEach((item: { code?: string, name: string, quantity: number, price?: number }) => {
             if (!item.name) return;
             const targetName = item.name.trim().toUpperCase();
             const systemProduct = fullCatalog.find(p => p.name.toUpperCase() === targetName) ||
                                   fullCatalog.find(p => p.name.toUpperCase().includes(targetName) || targetName.includes(p.name.toUpperCase()));
             
             const prodName = systemProduct ? systemProduct.name : targetName;
-            const prodPrice = systemProduct ? systemProduct.price : (item.price || 0);
+            const prodPrice = (item.price !== undefined && item.price !== null && item.price > 0)
+              ? item.price
+              : (systemProduct ? systemProduct.price : (item.price || 0));
+            const prodCode = systemProduct?.code || item.code || Math.floor(100000 + Math.random() * 900000).toString();
             const quantityToAdd = item.quantity || 1;
 
             // Check if product already exists in the cart
@@ -654,11 +669,9 @@ export default function App() {
                     quantity: existingProduct.quantity + quantityToAdd
                 };
             } else {
-                // Add new product
-                const pseudoCode = Math.floor(100000 + Math.random() * 900000).toString();
-                
+                // Add new product with code from Supabase catalog
                 updatedProducts.push({
-                    code: pseudoCode,
+                    code: prodCode,
                     name: prodName,
                     price: prodPrice,
                     quantity: quantityToAdd,
@@ -742,14 +755,17 @@ export default function App() {
         
         let updatedProducts = [...data.products];
         if (result.items && Array.isArray(result.items)) {
-          result.items.forEach((item: { name: string, quantity: number, price?: number }) => {
+          result.items.forEach((item: { code?: string, name: string, quantity: number, price?: number }) => {
             if (!item.name) return;
             const targetName = item.name.trim().toUpperCase();
             const systemProduct = fullCatalog.find(p => p.name.toUpperCase() === targetName) ||
                                   fullCatalog.find(p => p.name.toUpperCase().includes(targetName) || targetName.includes(p.name.toUpperCase()));
             
             const prodName = systemProduct ? systemProduct.name : targetName;
-            const prodPrice = systemProduct ? systemProduct.price : (item.price || 0);
+            const prodPrice = (item.price !== undefined && item.price !== null && item.price > 0)
+              ? item.price
+              : (systemProduct ? systemProduct.price : (item.price || 0));
+            const prodCode = systemProduct?.code || item.code || Math.floor(100000 + Math.random() * 900000).toString();
             const quantityToAdd = item.quantity || 1;
             const existingProductIndex = updatedProducts.findIndex(p => p.name.toUpperCase() === prodName.toUpperCase());
 
@@ -760,9 +776,8 @@ export default function App() {
                 quantity: existingProduct.quantity + quantityToAdd
               };
             } else {
-              const pseudoCode = Math.floor(100000 + Math.random() * 900000).toString();
               updatedProducts.push({
-                code: pseudoCode,
+                code: prodCode,
                 name: prodName,
                 price: prodPrice,
                 quantity: quantityToAdd,
