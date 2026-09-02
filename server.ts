@@ -47,11 +47,11 @@ async function startServer() {
       `;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3.6-flash',
+        model: 'gemini-3.7-flash',
         contents: prompt,
         config: {
           temperature: 0.1,
-          systemInstruction: "Você é um extrator ultrarrápido de dados de vendas da BelConfort.",
+          systemInstruction: "Você é um extrator ultrarrápido de dados de vendas da BelConfort. Extraia todos os dados do cliente e todos os itens do pedido com precisão.",
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
@@ -81,7 +81,8 @@ async function startServer() {
                   type: Type.OBJECT,
                   properties: {
                     name: { type: Type.STRING },
-                    quantity: { type: Type.NUMBER }
+                    quantity: { type: Type.NUMBER },
+                    price: { type: Type.NUMBER }
                   }
                 },
               }
@@ -136,7 +137,7 @@ async function startServer() {
       `;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3.6-flash',
+        model: 'gemini-3.7-flash',
         contents: prompt,
         config: {
           temperature: 0.2,

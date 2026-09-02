@@ -633,37 +633,38 @@ export default function App() {
       let updatedProducts = [...data.products];
       
       if (result.items && Array.isArray(result.items)) {
-        result.items.forEach((item: { name: string, quantity: number }) => {
-            // item comes from AI as { name: "EXACT NAME", quantity: 2 }
-            const systemProduct = fullCatalog.find(p => p.name === item.name);
+        result.items.forEach((item: { name: string, quantity: number, price?: number }) => {
+            if (!item.name) return;
+            const targetName = item.name.trim().toUpperCase();
+            const systemProduct = fullCatalog.find(p => p.name.toUpperCase() === targetName) ||
+                                  fullCatalog.find(p => p.name.toUpperCase().includes(targetName) || targetName.includes(p.name.toUpperCase()));
             
-            if (systemProduct) {
-                const quantityToAdd = item.quantity || 1;
+            const prodName = systemProduct ? systemProduct.name : targetName;
+            const prodPrice = systemProduct ? systemProduct.price : (item.price || 0);
+            const quantityToAdd = item.quantity || 1;
 
-                // Check if product already exists in the cart (by exact name)
-                const existingProductIndex = updatedProducts.findIndex(p => p.name === systemProduct.name);
+            // Check if product already exists in the cart
+            const existingProductIndex = updatedProducts.findIndex(p => p.name.toUpperCase() === prodName.toUpperCase());
 
-                if (existingProductIndex >= 0) {
-                    // Update quantity
-                    const existingProduct = updatedProducts[existingProductIndex];
-                    updatedProducts[existingProductIndex] = {
-                        ...existingProduct,
-                        quantity: existingProduct.quantity + quantityToAdd
-                    };
-                } else {
-                    // Add new product
-                    // Generate Numeric Code (6 digits)
-                    const pseudoCode = Math.floor(100000 + Math.random() * 900000).toString();
-                    
-                    updatedProducts.push({
-                        code: pseudoCode,
-                        name: systemProduct.name,
-                        price: systemProduct.price,
-                        quantity: quantityToAdd,
-                        warrantyTime: "", // Default manual
-                        warrantyUnit: "MESES"
-                    });
-                }
+            if (existingProductIndex >= 0) {
+                // Update quantity
+                const existingProduct = updatedProducts[existingProductIndex];
+                updatedProducts[existingProductIndex] = {
+                    ...existingProduct,
+                    quantity: existingProduct.quantity + quantityToAdd
+                };
+            } else {
+                // Add new product
+                const pseudoCode = Math.floor(100000 + Math.random() * 900000).toString();
+                
+                updatedProducts.push({
+                    code: pseudoCode,
+                    name: prodName,
+                    price: prodPrice,
+                    quantity: quantityToAdd,
+                    warrantyTime: "",
+                    warrantyUnit: "MESES"
+                });
             }
         });
       }
@@ -741,29 +742,33 @@ export default function App() {
         
         let updatedProducts = [...data.products];
         if (result.items && Array.isArray(result.items)) {
-          result.items.forEach((item: { name: string, quantity: number }) => {
-            const systemProduct = fullCatalog.find(p => p.name === item.name);
-            if (systemProduct) {
-              const quantityToAdd = item.quantity || 1;
-              const existingProductIndex = updatedProducts.findIndex(p => p.name === systemProduct.name);
+          result.items.forEach((item: { name: string, quantity: number, price?: number }) => {
+            if (!item.name) return;
+            const targetName = item.name.trim().toUpperCase();
+            const systemProduct = fullCatalog.find(p => p.name.toUpperCase() === targetName) ||
+                                  fullCatalog.find(p => p.name.toUpperCase().includes(targetName) || targetName.includes(p.name.toUpperCase()));
+            
+            const prodName = systemProduct ? systemProduct.name : targetName;
+            const prodPrice = systemProduct ? systemProduct.price : (item.price || 0);
+            const quantityToAdd = item.quantity || 1;
+            const existingProductIndex = updatedProducts.findIndex(p => p.name.toUpperCase() === prodName.toUpperCase());
 
-              if (existingProductIndex >= 0) {
-                const existingProduct = updatedProducts[existingProductIndex];
-                updatedProducts[existingProductIndex] = {
-                  ...existingProduct,
-                  quantity: existingProduct.quantity + quantityToAdd
-                };
-              } else {
-                const pseudoCode = Math.floor(100000 + Math.random() * 900000).toString();
-                updatedProducts.push({
-                  code: pseudoCode,
-                  name: systemProduct.name,
-                  price: systemProduct.price,
-                  quantity: quantityToAdd,
-                  warrantyTime: "",
-                  warrantyUnit: "MESES"
-                });
-              }
+            if (existingProductIndex >= 0) {
+              const existingProduct = updatedProducts[existingProductIndex];
+              updatedProducts[existingProductIndex] = {
+                ...existingProduct,
+                quantity: existingProduct.quantity + quantityToAdd
+              };
+            } else {
+              const pseudoCode = Math.floor(100000 + Math.random() * 900000).toString();
+              updatedProducts.push({
+                code: pseudoCode,
+                name: prodName,
+                price: prodPrice,
+                quantity: quantityToAdd,
+                warrantyTime: "",
+                warrantyUnit: "MESES"
+              });
             }
           });
         }

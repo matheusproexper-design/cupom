@@ -68,7 +68,7 @@ export const generateClientMessage = async (data: ReceiptData): Promise<string> 
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3.6-flash',
+      model: 'gemini-3.7-flash',
       contents: prompt,
       config: {
         temperature: 0.2,
@@ -130,7 +130,7 @@ export const parseReceiptFromText = async (text: string, catalogNames: string[] 
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3.6-flash',
+      model: 'gemini-3.7-flash',
       contents: prompt,
       config: {
         temperature: 0.1,
@@ -164,7 +164,8 @@ export const parseReceiptFromText = async (text: string, catalogNames: string[] 
                 type: Type.OBJECT,
                 properties: {
                   name: { type: Type.STRING },
-                  quantity: { type: Type.NUMBER }
+                  quantity: { type: Type.NUMBER },
+                  price: { type: Type.NUMBER }
                 }
               },
             }
