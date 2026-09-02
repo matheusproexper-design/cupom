@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { INITIAL_DATA, ReceiptData, PRODUCTS_LIST, PRODUCT_CATALOG, Product, CatalogItem } from './types';
 import { generateReceiptPDF, getReceiptBlob } from './services/pdfService';
-import { generateClientMessage, parseReceiptFromText } from './services/geminiService';
+import { generateClientMessage, parseReceiptFromText, parseReceiptLocally } from './services/geminiService';
 import { supabase } from './services/supabase';
 import { Input, Select, TextArea } from './components/Input';
 import { ReceiptHistoryModal } from './components/ReceiptHistoryModal';
@@ -785,10 +785,23 @@ export default function App() {
         setActiveTab('manual');
       } catch (error: any) {
         console.error(error);
-        setModalImportError({
-          title: "Erro na Inteligência Artificial",
-          msg: error.message || "Não foi possível interpretar os dados colados. Verifique o texto e tente novamente."
-        });
+        // Fallback locally in case of unhandled exception
+        try {
+          const fallbackResult = parseReceiptLocally(modalImportText, fullProductsList);
+          setData(prev => ({
+            ...prev,
+            ...fallbackResult.clientData,
+            salesperson: finalSalesperson,
+          }));
+          setModalImportText("");
+          setIsWelcomeModalOpen(false);
+          setActiveTab('manual');
+        } catch (fErr) {
+          setModalImportError({
+            title: "Aviso na Importação",
+            msg: "Não foi possível interpretar todos os dados. Você pode preencher os campos diretamente no formulário."
+          });
+        }
       } finally {
         setIsModalImporting(false);
       }
