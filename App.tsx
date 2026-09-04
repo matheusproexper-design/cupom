@@ -212,6 +212,9 @@ export default function App() {
   const [modalSalesperson, setModalSalesperson] = useState(() => {
     return localStorage.getItem('belconfort_saved_salesperson') || '';
   });
+  const [modalPassword, setModalPassword] = useState("");
+  const [showModalPassword, setShowModalPassword] = useState(false);
+  const [modalPasswordError, setModalPasswordError] = useState("");
   const [modalImportText, setModalImportText] = useState("");
   const [isModalImporting, setIsModalImporting] = useState(false);
   const [modalImportError, setModalImportError] = useState<{ title: string; msg: string } | null>(null);
@@ -759,9 +762,9 @@ export default function App() {
     if (e) e.preventDefault();
     const finalSalesperson = modalSalesperson.trim().toUpperCase();
 
-    // 1. Mandatory salesperson check
+    // 1. Mandatory salesperson check by password
     if (!finalSalesperson) {
-      alert("Por favor, informe ou selecione quem está na página para liberar o acesso ao sistema.");
+      setModalPasswordError("Por favor, digite sua senha de usuário para identificar o atendente e liberar o acesso.");
       return;
     }
 
@@ -769,70 +772,50 @@ export default function App() {
     localStorage.setItem('belconfort_saved_salesperson', finalSalesperson);
     sessionStorage.setItem('belconfort_identified_session', 'true');
     setHasIdentified(true);
-    setData(prev => ({ ...prev, salesperson: finalSalesperson }));
 
-    // 2. If import text was provided, process via Gemini AI
+    // Limpar descontos, fretes e buscas do cliente anterior
+    setDiscountInput("");
+    setShippingInput("");
+    setSearchTerm("");
+
+    // 2. If import text was provided, process via Gemini AI for the new client
     if (modalImportText.trim()) {
       setIsModalImporting(true);
       setModalImportError(null);
       try {
         const result = await parseReceiptFromText(modalImportText, fullProductsList);
         
-        let updatedProducts = [...data.products];
-        if (result.items && Array.isArray(result.items)) {
-          result.items.forEach((item: { code?: string, name: string, quantity: number, price?: number }) => {
-            if (!item.name) return;
-            const targetName = item.name.trim().toUpperCase();
-            const systemProduct = fullCatalog.find(p => p.name.toUpperCase() === targetName) ||
-                                  fullCatalog.find(p => p.name.toUpperCase().includes(targetName) || targetName.includes(p.name.toUpperCase()));
-            
-            const prodName = systemProduct ? systemProduct.name : targetName;
-            const prodPrice = (item.price !== undefined && item.price !== null && item.price > 0)
-              ? item.price
-              : (systemProduct ? systemProduct.price : (item.price || 0));
-            const prodCode = systemProduct?.code || item.code || Math.floor(100000 + Math.random() * 900000).toString();
-            const quantityToAdd = item.quantity || 1;
-            const existingProductIndex = updatedProducts.findIndex(p => p.name.toUpperCase() === prodName.toUpperCase());
+        const updatedProducts = result.products && result.products.length > 0
+          ? result.products
+          : [{ code: '101', name: '', quantity: 1, price: 0, warrantyTime: '1', warrantyUnit: 'ANOS' }];
 
-            if (existingProductIndex >= 0) {
-              const existingProduct = updatedProducts[existingProductIndex];
-              updatedProducts[existingProductIndex] = {
-                ...existingProduct,
-                quantity: existingProduct.quantity + quantityToAdd
-              };
-            } else {
-              updatedProducts.push({
-                code: prodCode,
-                name: prodName,
-                price: prodPrice,
-                quantity: quantityToAdd,
-                warrantyTime: "",
-                warrantyUnit: "MESES"
-              });
-            }
-          });
-        }
-
-        setData(prev => ({
-          ...prev,
+        // Zera completamente o cliente anterior e inicia um novo do zero com os dados importados
+        setData({
+          ...INITIAL_DATA,
+          saleCode: Math.floor(100000 + Math.random() * 900000).toString(),
+          date: new Date().toISOString().split('T')[0],
           ...result.clientData,
           salesperson: finalSalesperson,
           products: updatedProducts,
-        }));
+        });
 
         setModalImportText("");
         setIsWelcomeModalOpen(false);
         setActiveTab('manual');
       } catch (error: any) {
         console.error(error);
-        // Fallback locally in case of unhandled exception
         try {
           const fallbackResult = parseReceiptLocally(modalImportText, fullProductsList);
-          setData(prev => ({
-            ...prev,
+          setData({
+            ...INITIAL_DATA,
+            saleCode: Math.floor(100000 + Math.random() * 900000).toString(),
+            date: new Date().toISOString().split('T')[0],
             ...fallbackResult.clientData,
             salesperson: finalSalesperson,
-          }));
+            products: fallbackResult.products && fallbackResult.products.length > 0
+              ? fallbackResult.products
+              : [{ code: '101', name: '', quantity: 1, price: 0, warrantyTime: '1', warrantyUnit: 'ANOS' }],
+          });
           setModalImportText("");
           setIsWelcomeModalOpen(false);
           setActiveTab('manual');
@@ -846,7 +829,14 @@ export default function App() {
         setIsModalImporting(false);
       }
     } else {
-      // Just close the modal and start with the salesperson defined
+      // Inicia um novo cliente do zero, zerando 100% dos dados anteriores
+      setData({
+        ...INITIAL_DATA,
+        saleCode: Math.floor(100000 + Math.random() * 900000).toString(),
+        date: new Date().toISOString().split('T')[0],
+        salesperson: finalSalesperson,
+        products: [{ code: '101', name: '', quantity: 1, price: 0, warrantyTime: '1', warrantyUnit: 'ANOS' }],
+      });
       setIsWelcomeModalOpen(false);
     }
   };
@@ -2682,81 +2672,98 @@ export default function App() {
                 </div>
                 <h2 className="text-lg sm:text-xl font-bold text-white mt-1">Identifique-se para Acessar</h2>
                 <p className="text-[11px] sm:text-xs text-gray-400 mt-0.5">
-                  Informe o seu nome para liberar o painel de vendas e carregar o atendimento.
+                  Informe a sua senha de atendente da loja para liberar o painel de vendas e carregar o atendimento.
                 </p>
               </div>
             </div>
 
             <form onSubmit={handleConfirmWelcomeModal} className="space-y-5">
               
-              {/* 1. Nome do Vendedor / Atendente (OBRIGATÓRIO) */}
+              {/* 1. Autenticação Obrigatória por Senha do Atendente */}
               <div className="bg-gray-800/60 p-4 rounded-2xl border border-blue-500/30 space-y-3">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-bold text-gray-200 uppercase tracking-wider flex items-center gap-1.5">
-                    <UserCheck className="w-4 h-4 text-blue-400" />
-                    Quem está na página? <span className="text-red-400 font-bold">*</span>
+                    <Lock className="w-4 h-4 text-blue-400" />
+                    Senha do Atendente <span className="text-red-400 font-bold">*</span>
                   </label>
                   {modalSalesperson.trim() ? (
-                    <span className="text-[10px] text-emerald-400 font-mono font-bold bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-500/30">
-                      ✓ {modalSalesperson.toUpperCase()}
+                    <span className="text-[10px] text-emerald-400 font-mono font-bold bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-500/30 flex items-center gap-1">
+                      <ShieldCheck className="w-3 h-3" /> {modalSalesperson.toUpperCase()}
                     </span>
                   ) : (
                     <span className="text-[10px] text-amber-400 font-mono font-bold bg-amber-950/40 px-2 py-0.5 rounded border border-amber-500/30">
-                      Campo Obrigatório
+                      Obrigatório
                     </span>
                   )}
                 </div>
 
-                <Input
-                  label="Nome do Vendedor"
-                  value={modalSalesperson}
-                  onChange={(e) => setModalSalesperson(e.target.value.toUpperCase())}
-                  placeholder="DIGITE SEU NOME OU ESCOLHA ABAIXO"
-                  className="uppercase font-semibold text-sm"
-                  icon={<User className="w-4 h-4 text-blue-400" />}
-                  autoFocus
-                />
-
-                <div className="pt-1">
-                  <div className="relative">
-                    <input
-                      type="password"
-                      placeholder="Ou digite sua senha de usuário para identificar automaticamente..."
-                      className="w-full bg-gray-900 border border-gray-700/80 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 focus:border-blue-500 outline-none"
-                      onChange={(e) => {
-                        const found = findUserByPassword(e.target.value);
-                        if (found) {
-                          setModalSalesperson(found.name);
-                        }
-                      }}
-                    />
-                    <Lock className="w-3.5 h-3.5 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2" />
-                  </div>
+                <div className="relative">
+                  <input
+                    type={showModalPassword ? "text" : "password"}
+                    value={modalPassword}
+                    placeholder="Digite sua senha de usuário da loja..."
+                    autoFocus
+                    className="w-full bg-gray-950 border border-gray-700 focus:border-blue-500 text-gray-100 text-sm rounded-xl pl-3.5 pr-10 py-2.5 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all font-mono"
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setModalPassword(val);
+                      setModalPasswordError("");
+                      const found = findUserByPassword(val);
+                      if (found) {
+                        setModalSalesperson(found.name);
+                        // Inicia um novo cliente e zera tudo do cliente anterior
+                        setDiscountInput("");
+                        setShippingInput("");
+                        setSearchTerm("");
+                        setData({
+                          ...INITIAL_DATA,
+                          saleCode: Math.floor(100000 + Math.random() * 900000).toString(),
+                          date: new Date().toISOString().split('T')[0],
+                          salesperson: found.name,
+                          products: [{ code: '101', name: '', quantity: 1, price: 0, warrantyTime: '1', warrantyUnit: 'ANOS' }]
+                        });
+                      } else {
+                        setModalSalesperson("");
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowModalPassword(!showModalPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200"
+                    tabIndex={-1}
+                  >
+                    {showModalPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
 
-                {/* Chips rápidos de vendedores */}
-                <div>
-                  <p className="text-[10px] text-gray-400 uppercase font-medium mb-1.5">Sugestões rápidas:</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {salespeople.map((name) => {
-                      const isSelected = modalSalesperson.toUpperCase() === name.toUpperCase();
-                      return (
-                        <button
-                          key={name}
-                          type="button"
-                          onClick={() => setModalSalesperson(name)}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold uppercase transition-all duration-150 border ${
-                            isSelected
-                              ? 'bg-blue-600 text-white border-blue-400 shadow-md shadow-blue-900/40 scale-105'
-                              : 'bg-gray-900/90 text-gray-300 border-gray-700 hover:border-gray-500 hover:text-white'
-                          }`}
-                        >
-                          {name}
-                        </button>
-                      );
-                    })}
+                {modalSalesperson ? (
+                  <div className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-500/30 flex items-center justify-between text-xs text-emerald-300">
+                    <div className="flex items-center gap-2">
+                      <UserCheck className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                      <span>Usuário Identificado: <strong>{modalSalesperson.toUpperCase()}</strong></span>
+                    </div>
+                    <span className="text-[9px] font-mono bg-emerald-900/60 px-2 py-0.5 rounded text-emerald-200 border border-emerald-500/30 font-bold">
+                      AUTENTICADO
+                    </span>
                   </div>
-                </div>
+                ) : modalPassword.trim() ? (
+                  <p className="text-xs text-amber-400 font-medium flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                    Senha não reconhecida. Digite sua senha cadastrada da loja.
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-gray-400">
+                    Digite sua senha de usuário para identificar o atendente e liberar o acesso.
+                  </p>
+                )}
+
+                {modalPasswordError && (
+                  <p className="text-xs text-red-400 font-medium flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                    {modalPasswordError}
+                  </p>
+                )}
               </div>
 
               {/* 2. Importação Inteligente (IA) - Opcional */}
@@ -2821,7 +2828,7 @@ export default function App() {
                     className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white py-3.5 px-5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all shadow-lg shadow-blue-900/40 flex items-center justify-center gap-2 active:scale-98"
                   >
                     <UserCheck className="w-4 h-4" />
-                    {modalSalesperson.trim() ? `Liberar Acesso como ${modalSalesperson.toUpperCase()}` : 'Informe seu Nome para Liberar Acesso'}
+                    {modalSalesperson.trim() ? `Liberar Acesso como ${modalSalesperson.toUpperCase()}` : 'Digite sua Senha para Liberar Acesso'}
                   </button>
                 )}
 
