@@ -6,6 +6,8 @@ import { generateClientMessage, parseReceiptFromText, parseReceiptLocally } from
 import { supabase } from './services/supabase';
 import { Input, Select, TextArea } from './components/Input';
 import { ReceiptHistoryModal } from './components/ReceiptHistoryModal';
+import { StoreAuthModal } from './components/StoreAuthModal';
+import { STORE_USERS, STORE_USER_NAMES, findUserByPassword, StoreUser } from './services/storeAuth';
 import { 
   Calendar, User, MapPin, Hash, Map, Building2, 
   Phone, Download, Printer, CreditCard, Plus, Trash2, Tag, Percent, Search,
@@ -54,23 +56,6 @@ const BarcodePreview = ({ code }: { code: string }) => {
   return <img ref={imgRef} alt="barcode" className="h-2.5 w-auto max-w-full object-contain opacity-80 mix-blend-multiply mt-0.5" />;
 }
 
-const getTodayDateString = () => {
-  const d = new Date();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
-const getYesterdayDateString = () => {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
 export default function App() {
   // Initialize state from localStorage or default
   const [data, setData] = useState<ReceiptData>(() => {
@@ -86,15 +71,18 @@ export default function App() {
     return INITIAL_DATA;
   });
 
-  // Salespeople Team State - Updated with new requested names
+  // Salespeople Team State - Initialized with store user names
   const [salespeople, setSalespeople] = useState<string[]>(() => {
     try {
       const savedTeam = localStorage.getItem(TEAM_STORAGE_KEY);
       if (savedTeam) {
-        return JSON.parse(savedTeam);
+        const parsed = JSON.parse(savedTeam);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
       }
     } catch (error) {}
-    return ['ROBSON', 'SARA', 'MATHEUS', 'GABRIEL', 'JEFFERSON', 'ITALO', 'MANOELA', 'ANA', 'DEBORA'];
+    return STORE_USER_NAMES;
   });
 
   const [newSalespersonName, setNewSalespersonName] = useState("");
@@ -224,32 +212,29 @@ export default function App() {
   const [modalSalesperson, setModalSalesperson] = useState(() => {
     return localStorage.getItem('belconfort_saved_salesperson') || '';
   });
-  const [modalSaleDate, setModalSaleDate] = useState(() => {
-    return data.date || getTodayDateString();
-  });
   const [modalImportText, setModalImportText] = useState("");
   const [isModalImporting, setIsModalImporting] = useState(false);
   const [modalImportError, setModalImportError] = useState<{ title: string; msg: string } | null>(null);
 
-  // Automatically require attendant identification and sale date on first entry
+  // Store User Password Authentication State (Required to generate receipts)
+  const [isStoreAuthModalOpen, setIsStoreAuthModalOpen] = useState(false);
+  const [pendingAuthAction, setPendingAuthAction] = useState<'pdf' | 'whatsapp' | 'email' | 'identify' | null>(null);
+
+  // Automatically require attendant identification on first entry
   useEffect(() => {
     const sessionIdentified = sessionStorage.getItem('belconfort_identified_session') === 'true';
     const saved = localStorage.getItem('belconfort_saved_salesperson');
-    const hasValidDate = Boolean(data.date && data.date.trim());
 
-    if (sessionIdentified && saved && saved.trim() && hasValidDate) {
+    if (sessionIdentified && saved && saved.trim()) {
       setData(prev => ({
         ...prev,
-        salesperson: prev.salesperson || saved.trim(),
-        date: prev.date || getTodayDateString()
+        salesperson: prev.salesperson || saved.trim()
       }));
       setModalSalesperson(saved.trim());
-      setModalSaleDate(data.date || getTodayDateString());
       setHasIdentified(true);
     } else {
-      // Obligatory lock: Open modal on start and require identification and sale date
+      // Obligatory lock: Open modal on start and require identification
       setHasIdentified(false);
-      setModalSaleDate(data.date || getTodayDateString());
       setIsWelcomeModalOpen(true);
     }
   }, []);
@@ -360,7 +345,7 @@ export default function App() {
     localStorage.setItem(TEAM_STORAGE_KEY, JSON.stringify(salespeople));
   }, [salespeople]);
 
-  const isIdentified = Boolean(hasIdentified && data.salesperson && data.salesperson.trim() && data.date && data.date.trim());
+  const isIdentified = Boolean(hasIdentified && data.salesperson && data.salesperson.trim());
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -370,11 +355,9 @@ export default function App() {
   const handleResetData = () => {
     if (window.confirm("Tem certeza que deseja iniciar um novo atendimento? Todos os dados atuais serão apagados.")) {
         const currentSalesperson = data.salesperson || localStorage.getItem('belconfort_saved_salesperson') || '';
-        const currentDate = data.date || getTodayDateString();
         setData({
           ...INITIAL_DATA,
-          salesperson: currentSalesperson,
-          date: currentDate
+          salesperson: currentSalesperson
         });
         setSearchTerm("");
         setDiscountInput("");
@@ -775,7 +758,6 @@ export default function App() {
   const handleConfirmWelcomeModal = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const finalSalesperson = modalSalesperson.trim().toUpperCase();
-    const finalSaleDate = modalSaleDate.trim();
 
     // 1. Mandatory salesperson check
     if (!finalSalesperson) {
@@ -783,23 +765,13 @@ export default function App() {
       return;
     }
 
-    // 2. Mandatory sale date check
-    if (!finalSaleDate) {
-      alert("Por favor, informe ou selecione a data da venda para liberar o acesso ao sistema.");
-      return;
-    }
-
-    // Auto-apply and persist salesperson name & date
+    // Auto-apply and persist salesperson name
     localStorage.setItem('belconfort_saved_salesperson', finalSalesperson);
     sessionStorage.setItem('belconfort_identified_session', 'true');
     setHasIdentified(true);
-    setData(prev => ({
-      ...prev,
-      salesperson: finalSalesperson,
-      date: finalSaleDate
-    }));
+    setData(prev => ({ ...prev, salesperson: finalSalesperson }));
 
-    // 3. If import text was provided, process via Gemini AI
+    // 2. If import text was provided, process via Gemini AI
     if (modalImportText.trim()) {
       setIsModalImporting(true);
       setModalImportError(null);
@@ -845,7 +817,6 @@ export default function App() {
           ...prev,
           ...result.clientData,
           salesperson: finalSalesperson,
-          date: finalSaleDate,
           products: updatedProducts,
         }));
 
@@ -861,7 +832,6 @@ export default function App() {
             ...prev,
             ...fallbackResult.clientData,
             salesperson: finalSalesperson,
-            date: finalSaleDate,
           }));
           setModalImportText("");
           setIsWelcomeModalOpen(false);
@@ -876,7 +846,7 @@ export default function App() {
         setIsModalImporting(false);
       }
     } else {
-      // Just close the modal and start with the salesperson and sale date defined
+      // Just close the modal and start with the salesperson defined
       setIsWelcomeModalOpen(false);
     }
   };
@@ -1053,13 +1023,16 @@ export default function App() {
   const totalValue = Math.max(0, subtotal - totalDiscount + (data.shippingValue || 0));
 
   // Helper to create a temporary data object with the FULL discount and emission timestamp applied
-  const getDataForExport = (): ReceiptData => {
+  const getDataForExport = (overrideSalesperson?: string): ReceiptData => {
     const now = new Date();
     const emissionDate = now.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
     const emissionTime = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
+    const finalSalesperson = (overrideSalesperson && overrideSalesperson.trim()) || data.salesperson || '';
+
     return {
         ...data,
+        salesperson: finalSalesperson,
         bundleDiscount: bundleDiscount,
         bundleLabel: bundleDiscountLabel, 
         discountType: data.discountType,
@@ -1151,9 +1124,10 @@ export default function App() {
     return null;
   };
 
-  const handleGeneratePDF = async () => {
+  // Execution functions with responsible attendant confirmed by password
+  const executeGeneratePDF = async (overrideSalesperson?: string) => {
     setIsSavingSupabase(true);
-    const exportData = getDataForExport();
+    const exportData = getDataForExport(overrideSalesperson);
     try {
       await saveReceiptToDatabase(exportData, totalValue);
     } finally {
@@ -1163,9 +1137,9 @@ export default function App() {
     }
   };
 
-  const handleSendEmail = async () => {
+  const executeSendEmail = async (overrideSalesperson?: string) => {
     try {
-      const exportData = getDataForExport();
+      const exportData = getDataForExport(overrideSalesperson);
       const blob = await getReceiptBlob(exportData);
       const safeName = exportData.name ? exportData.name.toUpperCase() : 'CLIENTE';
       const fileName = `COMPROVANTE - ${safeName}.pdf`;
@@ -1194,9 +1168,9 @@ export default function App() {
     }
   };
 
-  const handleSendWhatsApp = async () => {
+  const executeSendWhatsApp = async (overrideSalesperson?: string) => {
     try {
-      const exportData = getDataForExport();
+      const exportData = getDataForExport(overrideSalesperson);
       const blob = await getReceiptBlob(exportData);
       const safeName = exportData.name ? exportData.name.toUpperCase() : 'CLIENTE';
       const fileName = `COMPROVANTE - ${safeName}.pdf`;
@@ -1229,6 +1203,49 @@ export default function App() {
     }
   };
 
+  // Obrigatório: para conseguir gerar o comprovante o usuário deve colocar a senha de usuário
+  const handleGeneratePDF = () => {
+    setPendingAuthAction('pdf');
+    setIsStoreAuthModalOpen(true);
+  };
+
+  const handleSendEmail = () => {
+    setPendingAuthAction('email');
+    setIsStoreAuthModalOpen(true);
+  };
+
+  const handleSendWhatsApp = () => {
+    setPendingAuthAction('whatsapp');
+    setIsStoreAuthModalOpen(true);
+  };
+
+  // Sucesso na autenticação por senha do aplicativo da loja
+  const handleStoreAuthSuccess = async (user: StoreUser) => {
+    setIsStoreAuthModalOpen(false);
+    const responsibleName = user.name;
+    
+    // Automaticamente define o usuário responsável no comprovante de acordo com a senha usada
+    setData(prev => ({
+      ...prev,
+      salesperson: responsibleName,
+    }));
+    localStorage.setItem('belconfort_saved_salesperson', responsibleName);
+    sessionStorage.setItem('belconfort_identified_session', 'true');
+    setHasIdentified(true);
+    setModalSalesperson(responsibleName);
+
+    const action = pendingAuthAction;
+    setPendingAuthAction(null);
+
+    if (action === 'pdf') {
+      await executeGeneratePDF(responsibleName);
+    } else if (action === 'whatsapp') {
+      await executeSendWhatsApp(responsibleName);
+    } else if (action === 'email') {
+      await executeSendEmail(responsibleName);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100 font-sans selection:bg-blue-500 selection:text-white pb-20">
       
@@ -1247,18 +1264,14 @@ export default function App() {
                type="button"
                onClick={() => {
                  setModalSalesperson(data.salesperson || localStorage.getItem('belconfort_saved_salesperson') || '');
-                 setModalSaleDate(data.date || getTodayDateString());
                  setIsWelcomeModalOpen(true);
                }}
                className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/20 text-xs font-semibold transition-all backdrop-blur-sm shadow-sm"
-               title="Abrir Importação Inteligente ou alterar Vendedor / Data"
+               title="Abrir Importação Inteligente ou alterar Vendedor"
              >
                <Sparkles className="w-3.5 h-3.5 text-yellow-300 flex-shrink-0" />
-               <span className="hidden md:inline">Vendedor & Data:</span>
+               <span className="hidden md:inline">Importação IA & Vendedor:</span>
                <span className="font-bold text-yellow-200 uppercase max-w-[100px] sm:max-w-none truncate">{data.salesperson || 'Identificar'}</span>
-               {data.date && (
-                 <span className="text-[11px] text-blue-200 font-mono hidden sm:inline">({formatSafeDate(data.date)})</span>
-               )}
              </button>
              <div className="hidden md:block text-right">
                 <p className="text-xs text-blue-200 font-medium">Ecosistema</p>
@@ -2020,14 +2033,47 @@ export default function App() {
                             icon={<Barcode className="w-4 h-4" />}
                             className="font-mono text-yellow-400 tracking-wider"
                         />
-                         <Select
-                            label="Vendedor"
-                            name="salesperson"
-                            value={data.salesperson}
-                            onChange={handleChange}
-                            options={salespeople}
-                            icon={<User className="w-4 h-4" />}
-                        />
+                        <div className="space-y-1 text-left">
+                          <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider flex items-center justify-between">
+                            <span className="flex items-center gap-1">
+                              <UserCheck className="w-3.5 h-3.5 text-blue-400" />
+                              Usuário Responsável
+                            </span>
+                            {data.salesperson ? (
+                              <span className="text-[9px] text-emerald-400 font-mono font-bold bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-500/30 flex items-center gap-1">
+                                <ShieldCheck className="w-2.5 h-2.5" /> Senha Confirmada
+                              </span>
+                            ) : (
+                              <span className="text-[9px] text-amber-400 font-mono font-bold bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-500/30 flex items-center gap-1">
+                                <Lock className="w-2.5 h-2.5" /> Senha na Emissão
+                              </span>
+                            )}
+                          </label>
+                          <div className="flex gap-1.5">
+                            <div className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-bold transition-all ${
+                              data.salesperson
+                                ? 'bg-gray-800/90 border-emerald-500/40 text-emerald-300'
+                                : 'bg-gray-800/40 border-gray-700 text-gray-400'
+                            }`}>
+                              <User className={`w-3.5 h-3.5 flex-shrink-0 ${data.salesperson ? 'text-emerald-400' : 'text-gray-500'}`} />
+                              <span className="truncate">
+                                {data.salesperson ? data.salesperson.toUpperCase() : 'DEFINIDO POR SENHA AO EMITIR'}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPendingAuthAction('identify');
+                                setIsStoreAuthModalOpen(true);
+                              }}
+                              className="px-2.5 py-2 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 text-xs font-bold transition-all flex items-center gap-1 flex-shrink-0"
+                              title="Autenticar com a senha da loja"
+                            >
+                              <Lock className="w-3 h-3" />
+                              {data.salesperson ? 'Trocar' : 'Identificar'}
+                            </button>
+                          </div>
+                        </div>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                          <Input 
@@ -2214,10 +2260,49 @@ export default function App() {
 
             <div className="bg-gray-900 border border-gray-800 rounded-xl sm:rounded-2xl p-2 sm:p-8 shadow-2xl relative w-full overflow-hidden">
                 <div className="absolute top-0 right-0 p-3 sm:p-4 z-10">
-                    <span className="text-[10px] font-bold tracking-widest text-gray-600 uppercase border border-gray-700 bg-white/80 px-2 py-1 rounded backdrop-blur">Preview</span>
+                    <span className="text-[10px] font-bold tracking-widest text-red-600 uppercase border border-red-500/40 bg-red-50 px-2 py-1 rounded backdrop-blur">PRÉVIA</span>
+                </div>
+
+                <div className="mb-3 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2 flex items-center justify-between text-amber-300 text-xs">
+                    <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                        <span><strong>Modo Prévia:</strong> O documento abaixo é apenas uma visualização preliminar e <u>não tem validade como comprovante</u>. Para emitir o comprovante oficial, utilize o botão "Gerar PDF".</span>
+                    </div>
+                    <span className="hidden sm:inline-block text-[9px] font-black uppercase tracking-wider text-amber-300 bg-amber-500/20 px-2 py-0.5 rounded border border-amber-500/30 whitespace-nowrap">
+                        Sem Valor Legal
+                    </span>
                 </div>
                 
-                <div className="bg-white text-gray-900 p-3 sm:p-8 rounded-lg shadow-sm min-h-[700px] sm:min-h-[800px] w-full max-w-full sm:max-w-lg mx-auto transform transition-all flex flex-col overflow-x-auto">
+                <div className="bg-white text-gray-900 p-3 sm:p-8 rounded-lg shadow-sm min-h-[700px] sm:min-h-[800px] w-full max-w-full sm:max-w-lg mx-auto transform transition-all flex flex-col overflow-x-auto relative overflow-hidden">
+                    
+                    {/* MARCA D'ÁGUA GIGANTE DE PRÉVIA - NÃO VÁLIDO COMO COMPROVANTE */}
+                    <div 
+                        aria-hidden="true" 
+                        className="absolute inset-0 pointer-events-none select-none z-30 flex flex-col items-center justify-between py-10 px-2 overflow-hidden"
+                    >
+                        {/* Faixa Superior Diagonal */}
+                        <div className="transform -rotate-[24deg] bg-red-600/15 border-y-2 border-red-600/30 text-red-700/60 text-[10px] sm:text-xs font-black uppercase tracking-[0.25em] py-1 text-center shadow-sm w-[150%] flex-shrink-0">
+                            PRÉVIA • NÃO VÁLIDO COMO COMPROVANTE • APENAS RASCUNHO
+                        </div>
+
+                        {/* Carimbo Central Gigante */}
+                        <div className="transform -rotate-[28deg] my-auto flex flex-col items-center justify-center p-4 sm:p-6 border-4 sm:border-8 border-dashed border-red-600/35 rounded-3xl bg-red-500/[0.04] max-w-[92%]">
+                            <span className="text-5xl sm:text-7xl md:text-8xl font-black text-red-600/30 tracking-[0.2em] uppercase leading-none text-center">
+                                PRÉVIA
+                            </span>
+                            <span className="text-xs sm:text-base font-black text-red-700/50 tracking-[0.2em] uppercase text-center mt-3 border-t-2 border-red-600/30 pt-2 px-2">
+                                NÃO VÁLIDO COMO COMPROVANTE
+                            </span>
+                            <span className="text-[9px] sm:text-[11px] font-bold text-red-600/40 uppercase tracking-wider text-center mt-1.5">
+                                EXIGE EMISSÃO OFICIAL EM PDF COM SENHA
+                            </span>
+                        </div>
+
+                        {/* Faixa Inferior Diagonal */}
+                        <div className="transform -rotate-[24deg] bg-red-600/15 border-y-2 border-red-600/30 text-red-700/60 text-[10px] sm:text-xs font-black uppercase tracking-[0.25em] py-1 text-center shadow-sm w-[150%] flex-shrink-0">
+                            DOCUMENTO SEM VALOR FISCAL OU LEGAL • PRÉVIA DE EMISSÃO
+                        </div>
+                    </div>
                     
                     <div className="bg-[#1e40af] text-white p-3 sm:p-6 -mx-3 sm:-mx-8 -mt-3 sm:-mt-8 mb-4 sm:mb-6 flex justify-between items-start">
                        <div className="flex flex-col justify-center h-full">
@@ -2632,6 +2717,23 @@ export default function App() {
                   autoFocus
                 />
 
+                <div className="pt-1">
+                  <div className="relative">
+                    <input
+                      type="password"
+                      placeholder="Ou digite sua senha de usuário para identificar automaticamente..."
+                      className="w-full bg-gray-900 border border-gray-700/80 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 focus:border-blue-500 outline-none"
+                      onChange={(e) => {
+                        const found = findUserByPassword(e.target.value);
+                        if (found) {
+                          setModalSalesperson(found.name);
+                        }
+                      }}
+                    />
+                    <Lock className="w-3.5 h-3.5 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2" />
+                  </div>
+                </div>
+
                 {/* Chips rápidos de vendedores */}
                 <div>
                   <p className="text-[10px] text-gray-400 uppercase font-medium mb-1.5">Sugestões rápidas:</p>
@@ -2745,6 +2847,18 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Modal de Autenticação com Senha de Usuário do App da Loja para Gerar Comprovante */}
+      <StoreAuthModal
+        isOpen={isStoreAuthModalOpen}
+        onClose={() => {
+          setIsStoreAuthModalOpen(false);
+          setPendingAuthAction(null);
+        }}
+        onSuccess={handleStoreAuthSuccess}
+        actionType={pendingAuthAction || 'pdf'}
+        currentSalesperson={data.salesperson}
+      />
     </div>
   );
 }
