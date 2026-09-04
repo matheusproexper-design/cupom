@@ -159,31 +159,63 @@ export function parseReceiptLocally(text: string, catalogNames: string[] = []): 
     clientData.city = cidadeLineMatch[1].trim().toUpperCase();
   }
 
+  // Extract Shipping / Frete
+  const shippingMatch = clean.match(/(?:frete|taxa de entrega|entrega)[:\s-]*r?\$?\s*(\d{1,4}(?:[.,]\d{2})?)/i);
+  if (shippingMatch) {
+    const sVal = parseFloat(shippingMatch[1].replace(',', '.'));
+    if (!isNaN(sVal) && sVal >= 0) {
+      clientData.shippingValue = sVal;
+    }
+  }
+
   // Extract Products from catalog or lines
   for (const line of lines) {
-    const isProdLine = /(?:produto|item|colch[aã]o|base|bicama|cabeceira|travesseiro|fog[aã]o|unibox|arm[aá]rio)/i.test(line);
-    if (isProdLine || catalogNames.some(cat => line.toUpperCase().includes(cat.toUpperCase().slice(0, 15)))) {
-      const qtyMatch = line.match(/^(\d+)x?\s+/i) || line.match(/(\d+)\s+(?:unidades?|un|pe[cç]as?|x)/i) || line.match(/\b(\d+)\b/);
+    const trimmedLine = line.trim();
+    // Ignore standalone header lines
+    if (/^(?:produtos?|itens?|item|mercadorias?|descri[cç][aã]o|dados do pedido)[:\s-]*$/i.test(trimmedLine)) {
+      continue;
+    }
+
+    const isProdLine = /(?:produto|item|mercadoria|colch[aã]o|base|box|bicama|cama|cabeceira|travesseiro|fog[aã]o|unibox|arm[aá]rio|conjunto|painel|poltrona|guarda-roupa|mesa|cadeira)/i.test(trimmedLine);
+    if (isProdLine || catalogNames.some(cat => trimmedLine.toUpperCase().includes(cat.toUpperCase().slice(0, 15)))) {
+      const qtyMatch = trimmedLine.match(/^[\*\-•\s]*(\d+)\s*(?:x|unidades?|un|pe[cç]as?)?\s+/i) || 
+                       trimmedLine.match(/\b(\d+)\s*(?:x|unidades?|un|pe[cç]as?)\b/i) || 
+                       trimmedLine.match(/\b(\d+)\b/);
       const qty = qtyMatch ? parseInt(qtyMatch[1], 10) : 1;
+
+      // Extract price from line if present (e.g. R$ 899,00 or 899.00)
+      const priceMatch = trimmedLine.match(/(?:R\$|R\s*\$)?\s*(\d{1,3}(?:\.\d{3})*,\d{2}|\b\d{2,5}(?:,\d{2})?)\s*$/i);
+      let linePrice: number | undefined = undefined;
+      if (priceMatch) {
+        const num = parseFloat(priceMatch[1].replace(/\./g, '').replace(',', '.'));
+        if (!isNaN(num) && num > 0) linePrice = num;
+      }
 
       let matchedName = '';
       for (const catName of catalogNames) {
         const keywords = catName.toUpperCase().split(' ').filter(k => k.length > 2);
-        const matchCount = keywords.filter(k => line.toUpperCase().includes(k)).length;
-        if (matchCount >= 2 || line.toUpperCase().includes(catName.toUpperCase())) {
+        const matchCount = keywords.filter(k => trimmedLine.toUpperCase().includes(k)).length;
+        if (matchCount >= 2 || trimmedLine.toUpperCase().includes(catName.toUpperCase())) {
           matchedName = catName;
           break;
         }
       }
 
       if (!matchedName) {
-        matchedName = line.replace(/^(?:produtos?|itens?|item|\d+x?|\d+)\s*[:\-]?\s*/i, '').trim().toUpperCase();
+        matchedName = trimmedLine
+          .replace(/^[\*\-•\s]*(?:produtos?|itens?|item|mercadorias?|descri[cç][aã]o)?\s*[:\-]?\s*[\*\-•\s]*/i, '')
+          .replace(/^(\d+\s*x?\s*)/i, '')
+          .replace(/(?:R\$|R\s*\$)?\s*(\d{1,3}(?:\.\d{3})*,\d{2}|\b\d{2,5}(?:,\d{2})?)\s*$/i, '')
+          .replace(/[-–—]\s*$/, '')
+          .trim()
+          .toUpperCase();
       }
 
-      if (matchedName && matchedName.length > 3 && !/^(?:cliente|endere[cç]o|valor|pagamento|data|telefone)/i.test(matchedName)) {
+      if (matchedName && matchedName.length > 2 && !/^(?:cliente|endere[cç]o|valor|pagamento|data|telefone|bairro|cidade|cep)/i.test(matchedName)) {
         items.push({
           name: matchedName,
           quantity: isNaN(qty) || qty < 1 ? 1 : qty,
+          price: linePrice,
         });
       }
     }
@@ -191,9 +223,11 @@ export function parseReceiptLocally(text: string, catalogNames: string[] = []): 
 
   // Check for gifts like "travesseiro"
   if (/travesseiro/i.test(clean) && !items.some(i => /travesseiro/i.test(i.name))) {
+    const travQtyMatch = clean.match(/(\d+)\s*(?:x\s*)?travesseiro/i);
+    const travQty = travQtyMatch ? parseInt(travQtyMatch[1], 10) : 1;
     items.push({
       name: "TRAVESSEIRO FLOCOS CONFORTO 20CM 60X40 BRANCO",
-      quantity: 1,
+      quantity: isNaN(travQty) || travQty < 1 ? 1 : travQty,
       price: 0
     });
   }

@@ -657,6 +657,94 @@ export default function App() {
     setData(prev => ({ ...prev, shippingValue: num }));
   };
 
+  // Helper to accurately map parsed receipt items/products to the Supabase catalogue
+  const mapImportedItemsToProducts = (rawResult: any): Product[] => {
+    const rawList = Array.isArray(rawResult?.items) && rawResult.items.length > 0
+      ? rawResult.items
+      : Array.isArray(rawResult?.products) && rawResult.products.length > 0
+      ? rawResult.products
+      : [];
+
+    if (rawList.length === 0) {
+      return [{ code: '101', name: '', quantity: 1, price: 0, warrantyTime: '1', warrantyUnit: 'ANOS' }];
+    }
+
+    const parsedProducts: Product[] = [];
+    const stopWords = new Set(['DE', 'DO', 'DA', 'COM', 'SEM', 'PARA', 'E', 'EM', '1X', '2X', '3X', 'UN', 'PC', 'PRODUTO', 'ITEM', 'BRINDE', 'CORTESIA']);
+
+    rawList.forEach((item: any) => {
+      if (!item) return;
+      const rawName = (item.name || item.description || item.produto || '').trim();
+      if (!rawName) return;
+
+      const targetName = rawName.toUpperCase();
+
+      // 1. Exact match in fullCatalog
+      let matched = fullCatalog.find(p => p.name.toUpperCase() === targetName);
+
+      // 2. Substring match
+      if (!matched) {
+        matched = fullCatalog.find(p => p.name.toUpperCase().includes(targetName) || targetName.includes(p.name.toUpperCase()));
+      }
+
+      // 3. Keyword / Token match
+      if (!matched) {
+        const tokens = targetName.replace(/[^\w\s]/g, ' ')
+          .split(/\s+/)
+          .filter(t => t.length >= 2 && !stopWords.has(t));
+
+        if (tokens.length > 0) {
+          let bestMatch: CatalogItem | undefined = undefined;
+          let maxMatched = 0;
+          for (const prod of fullCatalog) {
+            const prodUpper = prod.name.toUpperCase();
+            let count = 0;
+            for (const t of tokens) {
+              if (prodUpper.includes(t)) count++;
+            }
+            if (count > maxMatched && count >= Math.min(2, tokens.length)) {
+              maxMatched = count;
+              bestMatch = prod;
+            }
+          }
+          matched = bestMatch;
+        }
+      }
+
+      const prodName = matched ? matched.name : targetName;
+
+      let prodPrice = 0;
+      if (item.price !== undefined && item.price !== null && Number(item.price) > 0) {
+        prodPrice = Number(item.price);
+      } else if (matched && matched.price > 0) {
+        prodPrice = Number(matched.price);
+      } else if (Number(item.price) === 0) {
+        prodPrice = 0; // e.g. brinde / cortesia
+      }
+
+      const prodCode = matched?.code || item.code || item.codigo || Math.floor(100000 + Math.random() * 900000).toString();
+      const quantityToAdd = Math.max(1, parseInt(item.quantity, 10) || 1);
+
+      const existingIndex = parsedProducts.findIndex(p => p.name.toUpperCase() === prodName.toUpperCase());
+      if (existingIndex >= 0) {
+        parsedProducts[existingIndex].quantity += quantityToAdd;
+      } else {
+        parsedProducts.push({
+          code: prodCode,
+          name: prodName,
+          price: prodPrice,
+          quantity: quantityToAdd,
+          warrantyTime: matched?.warrantyTime || item.warrantyTime || "1",
+          warrantyUnit: matched?.warrantyUnit || item.warrantyUnit || "ANOS"
+        });
+      }
+    });
+
+    return parsedProducts.length > 0
+      ? parsedProducts
+      : [{ code: '101', name: '', quantity: 1, price: 0, warrantyTime: '1', warrantyUnit: 'ANOS' }];
+  };
+
   const handleSmartImport = async () => {
     if (!importText.trim()) return;
 
@@ -666,59 +754,62 @@ export default function App() {
       // Pass the system product list so AI can match exact names
       const result = await parseReceiptFromText(importText, fullProductsList);
       
-      // LOGIC UPDATE: Check existing products in the cart to update quantity instead of duplicating
-      // Create a working copy of current products
-      let updatedProducts = [...data.products];
-      
-      if (result.items && Array.isArray(result.items)) {
-        result.items.forEach((item: { code?: string, name: string, quantity: number, price?: number }) => {
-            if (!item.name) return;
-            const targetName = item.name.trim().toUpperCase();
-            const systemProduct = fullCatalog.find(p => p.name.toUpperCase() === targetName) ||
-                                  fullCatalog.find(p => p.name.toUpperCase().includes(targetName) || targetName.includes(p.name.toUpperCase()));
-            
-            const prodName = systemProduct ? systemProduct.name : targetName;
-            const prodPrice = (item.price !== undefined && item.price !== null && item.price > 0)
-              ? item.price
-              : (systemProduct ? systemProduct.price : (item.price || 0));
-            const prodCode = systemProduct?.code || item.code || Math.floor(100000 + Math.random() * 900000).toString();
-            const quantityToAdd = item.quantity || 1;
+      const updatedProducts = mapImportedItemsToProducts(result);
+      const shippingVal = Number(result.clientData?.shippingValue) || 0;
 
-            // Check if product already exists in the cart
-            const existingProductIndex = updatedProducts.findIndex(p => p.name.toUpperCase() === prodName.toUpperCase());
+      // Zera o cliente anterior e inicia um novo cliente do zero com os dados importados
+      setData({
+        ...INITIAL_DATA,
+        saleCode: result.clientData?.saleCode || Math.floor(100000 + Math.random() * 900000).toString(),
+        date: result.clientData?.date || new Date().toISOString().split('T')[0],
+        salesperson: data.salesperson || localStorage.getItem('belconfort_saved_salesperson') || '',
+        ...result.clientData,
+        products: updatedProducts,
+        shippingValue: shippingVal,
+      });
 
-            if (existingProductIndex >= 0) {
-                // Update quantity
-                const existingProduct = updatedProducts[existingProductIndex];
-                updatedProducts[existingProductIndex] = {
-                    ...existingProduct,
-                    quantity: existingProduct.quantity + quantityToAdd
-                };
-            } else {
-                // Add new product with code from Supabase catalog
-                updatedProducts.push({
-                    code: prodCode,
-                    name: prodName,
-                    price: prodPrice,
-                    quantity: quantityToAdd,
-                    warrantyTime: "",
-                    warrantyUnit: "MESES"
-                });
-            }
-        });
+      setDiscountInput("");
+      if (shippingVal > 0) {
+        setShippingInput(String(shippingVal));
+      } else {
+        setShippingInput("");
       }
-
-      setData(prev => ({
-        ...prev,
-        ...result.clientData, // Merge client data
-        products: updatedProducts, // Use the updated list with merged quantities
-      }));
-
+      setSearchTerm("");
       setImportText("");
       setActiveTab('manual'); // Switch back to view result
     } catch (error: any) {
       console.error(error);
       
+      // Tenta fallback local inteligente antes de mostrar erro
+      try {
+        const fallbackResult = parseReceiptLocally(importText, fullProductsList);
+        const fallbackProducts = mapImportedItemsToProducts(fallbackResult);
+        const shippingVal = Number(fallbackResult.clientData?.shippingValue) || 0;
+
+        setData({
+          ...INITIAL_DATA,
+          saleCode: fallbackResult.clientData?.saleCode || Math.floor(100000 + Math.random() * 900000).toString(),
+          date: fallbackResult.clientData?.date || new Date().toISOString().split('T')[0],
+          salesperson: data.salesperson || localStorage.getItem('belconfort_saved_salesperson') || '',
+          ...fallbackResult.clientData,
+          products: fallbackProducts,
+          shippingValue: shippingVal,
+        });
+
+        setDiscountInput("");
+        if (shippingVal > 0) {
+          setShippingInput(String(shippingVal));
+        } else {
+          setShippingInput("");
+        }
+        setSearchTerm("");
+        setImportText("");
+        setActiveTab('manual');
+        return;
+      } catch (fErr) {
+        // Continua para o tratamento de erro
+      }
+
       let errorTitle = "Erro na Inteligência Artificial";
       let errorMsg = error.message || "Erro desconhecido";
       let detailedMsg = "";
@@ -785,19 +876,25 @@ export default function App() {
       try {
         const result = await parseReceiptFromText(modalImportText, fullProductsList);
         
-        const updatedProducts = result.products && result.products.length > 0
-          ? result.products
-          : [{ code: '101', name: '', quantity: 1, price: 0, warrantyTime: '1', warrantyUnit: 'ANOS' }];
+        const updatedProducts = mapImportedItemsToProducts(result);
+        const shippingVal = Number(result.clientData?.shippingValue) || 0;
 
         // Zera completamente o cliente anterior e inicia um novo do zero com os dados importados
         setData({
           ...INITIAL_DATA,
-          saleCode: Math.floor(100000 + Math.random() * 900000).toString(),
-          date: new Date().toISOString().split('T')[0],
+          saleCode: result.clientData?.saleCode || Math.floor(100000 + Math.random() * 900000).toString(),
+          date: result.clientData?.date || new Date().toISOString().split('T')[0],
           ...result.clientData,
           salesperson: finalSalesperson,
           products: updatedProducts,
+          shippingValue: shippingVal,
         });
+
+        if (shippingVal > 0) {
+          setShippingInput(String(shippingVal));
+        } else {
+          setShippingInput("");
+        }
 
         setModalImportText("");
         setIsWelcomeModalOpen(false);
@@ -806,16 +903,25 @@ export default function App() {
         console.error(error);
         try {
           const fallbackResult = parseReceiptLocally(modalImportText, fullProductsList);
+          const fallbackProducts = mapImportedItemsToProducts(fallbackResult);
+          const shippingVal = Number(fallbackResult.clientData?.shippingValue) || 0;
+
           setData({
             ...INITIAL_DATA,
-            saleCode: Math.floor(100000 + Math.random() * 900000).toString(),
-            date: new Date().toISOString().split('T')[0],
+            saleCode: fallbackResult.clientData?.saleCode || Math.floor(100000 + Math.random() * 900000).toString(),
+            date: fallbackResult.clientData?.date || new Date().toISOString().split('T')[0],
             ...fallbackResult.clientData,
             salesperson: finalSalesperson,
-            products: fallbackResult.products && fallbackResult.products.length > 0
-              ? fallbackResult.products
-              : [{ code: '101', name: '', quantity: 1, price: 0, warrantyTime: '1', warrantyUnit: 'ANOS' }],
+            products: fallbackProducts,
+            shippingValue: shippingVal,
           });
+
+          if (shippingVal > 0) {
+            setShippingInput(String(shippingVal));
+          } else {
+            setShippingInput("");
+          }
+
           setModalImportText("");
           setIsWelcomeModalOpen(false);
           setActiveTab('manual');
@@ -2845,7 +2951,7 @@ export default function App() {
 
               {!modalSalesperson.trim() && (
                 <p className="text-[11px] text-center text-amber-400/90 font-medium">
-                  ⚠️ O acesso ao sistema só será liberado após digitar ou selecionar seu nome.
+                  ⚠️ O acesso ao sistema só será liberado após digitar sua senha de usuário.
                 </p>
               )}
 
