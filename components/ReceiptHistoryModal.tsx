@@ -54,6 +54,7 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
 
   // Delete confirmation state
   const [itemToDelete, setItemToDelete] = useState<Comprovante | null>(null);
+  const [selectedSeller, setSelectedSeller] = useState<string>('ALL');
 
   const fetchHistory = async () => {
     setLoading(true);
@@ -66,15 +67,14 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
 
       if (error) {
         console.error('[Supabase] Erro ao carregar histórico:', error);
-      } else if (data) {
-        setComprovantes(data as Comprovante[]);
       }
 
       // 2. Carrega snapshots do servidor
+      let snaps: Record<string, any> = {};
       try {
         const snapRes = await fetch('/api/receipts-snapshots');
         if (snapRes.ok) {
-          const snaps = await snapRes.json();
+          snaps = await snapRes.json();
           if (snaps && typeof snaps === 'object') {
             setServerSnapshots(snaps);
           }
@@ -82,6 +82,63 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
       } catch (snapErr) {
         console.warn('Erro ao carregar snapshots do servidor:', snapErr);
       }
+
+      // 3. Carrega snapshots do cache local
+      try {
+        const localSnaps = JSON.parse(localStorage.getItem('belconfort_receipt_snapshots') || '{}');
+        if (localSnaps && typeof localSnaps === 'object') {
+          snaps = { ...localSnaps, ...snaps };
+        }
+      } catch {}
+
+      // 4. Unifica os comprovantes garantindo que TODOS os comprovantes de TODOS os usuários sejam exibidos
+      const combinedMap = new Map<string, Comprovante>();
+
+      if (data && Array.isArray(data)) {
+        (data as Comprovante[]).forEach(comp => {
+          if (comp && comp.id) {
+            combinedMap.set(comp.id, comp);
+          }
+        });
+      }
+
+      // Adiciona registros presentes nos snapshots que porventura ainda não estejam no Supabase
+      Object.entries(snaps).forEach(([id, snap]: [string, any]) => {
+        if (!combinedMap.has(id) && snap) {
+          const validProds = Array.isArray(snap.products) ? snap.products : [];
+          combinedMap.set(id, {
+            id,
+            cliente_nome: snap.name || 'CLIENTE NÃO INFORMADO',
+            total: Number(snap.totalValue || 0),
+            data_emissao: snap.savedAt || snap.date || new Date().toISOString(),
+            itens_comprovante: [
+              ...validProds.map((p: any, idx: number) => ({
+                id: `${id}-${idx}`,
+                comprovante_id: id,
+                nome_produto: p.name || 'PRODUTO',
+                quantidade: Number(p.quantity || 1),
+                preco: Number(p.price || 0)
+              })),
+              {
+                id: `${id}-snap`,
+                comprovante_id: id,
+                nome_produto: '__BELCONFORT_RECEIPT_SNAPSHOT__:' + JSON.stringify(snap),
+                quantidade: 0,
+                preco: 0
+              }
+            ]
+          });
+        }
+      });
+
+      // Ordena cronologicamente: os mais recentes primeiro
+      const sorted = Array.from(combinedMap.values()).sort((a, b) => {
+        const timeA = new Date(a.data_emissao || 0).getTime();
+        const timeB = new Date(b.data_emissao || 0).getTime();
+        return timeB - timeA;
+      });
+
+      setComprovantes(sorted);
     } catch (err) {
       console.error('[Supabase] Falha ao consultar comprovantes:', err);
     } finally {
@@ -210,7 +267,24 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
     };
   };
 
+  // Lista de todos os atendentes que possuem comprovantes registrados
+  const availableSellers: string[] = Array.from(
+    new Set<string>(
+      comprovantes
+        .map(c => getSnapshotFromComprovante(c)?.salesperson)
+        .filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
+    )
+  ).sort();
+
   const filteredList = comprovantes.filter(c => {
+    const snap = getSnapshotFromComprovante(c);
+
+    // Filtro por vendedor / atendente selecionado
+    if (selectedSeller && selectedSeller !== 'ALL') {
+      const seller = (snap?.salesperson || '').toLowerCase();
+      if (seller !== selectedSeller.toLowerCase()) return false;
+    }
+
     if (!searchTerm.trim()) return true;
     const term = searchTerm.toLowerCase();
     const matchesName = (c.cliente_nome || '').toLowerCase().includes(term);
@@ -224,13 +298,14 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
       (i.nome_produto || '').toLowerCase().includes(term)
     );
 
-    // Snapshot metadata (vendedor, código de venda, cpf)
-    const snap = getSnapshotFromComprovante(c);
+    // Snapshot metadata (vendedor, código de venda, cpf, contatos)
     const matchesSeller = snap?.salesperson ? snap.salesperson.toLowerCase().includes(term) : false;
     const matchesSaleCode = snap?.saleCode ? snap.saleCode.toLowerCase().includes(term) : false;
     const matchesCpf = snap?.cpf ? snap.cpf.toLowerCase().includes(term) : false;
+    const matchesContact = (snap?.contact1 && snap.contact1.toLowerCase().includes(term)) || 
+                           (snap?.contact2 && snap.contact2.toLowerCase().includes(term));
 
-    return matchesName || matchesId || matchesItem || matchesSeller || matchesSaleCode || matchesCpf;
+    return matchesName || matchesId || matchesItem || matchesSeller || matchesSaleCode || matchesCpf || Boolean(matchesContact);
   });
 
   const totalValueSum = comprovantes.reduce((sum, c) => sum + (Number(c.total) || 0), 0);
@@ -477,22 +552,44 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
             </div>
           </div>
 
-          <div className="relative">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Buscar por cliente, ID do comprovante ou nome de produto..."
-              className="w-full bg-gray-800 border border-gray-700 focus:border-purple-500 text-gray-100 text-sm rounded-xl pl-10 pr-4 py-2.5 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500/20 transition-all uppercase"
-            />
-            {searchTerm && (
-              <button
-                onClick={() => setSearchTerm('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-gray-200"
-              >
-                Limpar
-              </button>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Buscar por cliente, vendedor, pedido, produto..."
+                className="w-full bg-gray-800 border border-gray-700 focus:border-purple-500 text-gray-100 text-sm rounded-xl pl-10 pr-4 py-2.5 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500/20 transition-all uppercase"
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-gray-200"
+                >
+                  Limpar
+                </button>
+              )}
+            </div>
+
+            {availableSellers.length > 0 && (
+              <div className="flex-shrink-0">
+                <select
+                  value={selectedSeller}
+                  onChange={(e) => setSelectedSeller(e.target.value)}
+                  className="w-full sm:w-auto bg-gray-800 border border-gray-700 text-gray-200 text-xs rounded-xl px-3 py-2.5 focus:outline-none focus:border-purple-500 font-medium"
+                >
+                  <option value="ALL">👥 Todos os Usuários ({comprovantes.length})</option>
+                  {availableSellers.map(seller => {
+                    const count = comprovantes.filter(c => getSnapshotFromComprovante(c)?.salesperson?.toLowerCase() === seller.toLowerCase()).length;
+                    return (
+                      <option key={seller} value={seller}>
+                        👤 {seller} ({count})
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
             )}
           </div>
         </div>
@@ -515,7 +612,7 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
               <p className="text-xs text-gray-400 max-w-sm mt-1">
                 {searchTerm 
                   ? 'Tente buscar com outro nome de cliente ou termo.' 
-                  : 'Gere um novo PDF no formulário principal para que ele seja salvo automaticamente aqui no histórico do Supabase.'}
+                  : 'Gere um novo comprovante (PDF, WhatsApp ou E-mail) para que ele apareça automaticamente aqui no histórico geral.'}
               </p>
             </div>
           ) : (
@@ -544,8 +641,14 @@ export const ReceiptHistoryModal: React.FC<ReceiptHistoryModalProps> = ({
                           <User className="w-3.5 h-3.5 text-purple-400" />
                           {snapshot?.name || comp.cliente_nome || 'CLIENTE NÃO INFORMADO'}
                         </span>
+                        {snapshot?.salesperson && (
+                          <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-blue-950/90 text-blue-300 border border-blue-800/80 flex items-center gap-1">
+                            <User className="w-3 h-3 text-blue-400" />
+                            ATENDENTE: {snapshot.salesperson.toUpperCase()}
+                          </span>
+                        )}
                         {snapshot?.saleCode && (
-                          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-blue-950/80 text-blue-300 border border-blue-800/60">
+                          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-purple-950/80 text-purple-300 border border-purple-800/60">
                             PEDIDO: {snapshot.saleCode}
                           </span>
                         )}

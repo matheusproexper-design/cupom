@@ -213,6 +213,7 @@ export default function App() {
   const [shippingInput, setShippingInput] = useState("");
   const [isSavingSupabase, setIsSavingSupabase] = useState(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const lastSavedReceiptRef = useRef<{ signature: string; id: string } | null>(null);
 
   // Onboarding / Welcome Modal State for Smart Import & Attendant Identification
   const [hasIdentified, setHasIdentified] = useState(() => {
@@ -383,6 +384,7 @@ export default function App() {
 
   const handleResetData = () => {
     if (window.confirm("Tem certeza que deseja iniciar um novo atendimento? Todos os dados atuais serão apagados.")) {
+        lastSavedReceiptRef.current = null;
         const currentSalesperson = data.salesperson || localStorage.getItem('belconfort_saved_salesperson') || '';
         setData({
           ...INITIAL_DATA,
@@ -1194,83 +1196,108 @@ export default function App() {
     } as ReceiptData;
   };
 
-  // Persists the receipt to Supabase (including the full snapshot with 100% of emission details)
-  const saveReceiptToDatabase = async (exportData: ReceiptData, finalTotal: number) => {
+  // Persists the receipt to Supabase & Server Snapshots (guaranteeing it enters history for ALL users)
+  const saveReceiptToDatabase = async (exportData: ReceiptData, finalTotal: number): Promise<string | null> => {
     try {
-      const clientName = exportData.name && exportData.name.trim() ? exportData.name.trim() : 'CLIENTE NÃO INFORMADO';
-      const { data: comprovante, error: compError } = await supabase
-        .from('comprovantes')
-        .insert([{
-          cliente_nome: clientName,
-          total: finalTotal
-        }])
-        .select()
-        .single();
+      const signature = JSON.stringify({
+        name: (exportData.name || '').trim().toUpperCase(),
+        total: finalTotal,
+        products: (exportData.products || []).map(p => ({ n: p.name, q: p.quantity, pr: p.price })),
+        salesperson: (exportData.salesperson || '').trim().toUpperCase()
+      });
 
-      if (compError) {
-        console.error('[Supabase] Erro ao salvar comprovante:', compError);
-        return null;
+      if (lastSavedReceiptRef.current && lastSavedReceiptRef.current.signature === signature) {
+        console.log('[BelConfort History] Comprovante já persistido no histórico:', lastSavedReceiptRef.current.id);
+        return lastSavedReceiptRef.current.id;
       }
 
-      if (comprovante?.id) {
-        // 1. Salvar os itens do carrinho na tabela itens_comprovante
-        const itensToInsert: any[] = exportData.products.map(p => ({
-          comprovante_id: comprovante.id,
-          nome_produto: p.name,
-          quantidade: p.quantity,
-          preco: p.price
-        }));
+      const clientName = exportData.name && exportData.name.trim() ? exportData.name.trim().toUpperCase() : 'CLIENTE NÃO INFORMADO';
+      const nowIso = new Date().toISOString();
+      let createdId: string | null = null;
 
-        // 2. Salvar o SNAPSHOT COMPLETO com 100% dos dados da emissão (endereço, vendedor, descontos, garantias, timestamps, etc.)
-        const snapshotPayload = JSON.stringify({
-          ...exportData,
-          comprovanteId: comprovante.id,
-          totalValue: finalTotal,
-          savedAt: new Date().toISOString()
-        });
+      try {
+        const { data: comprovante, error: compError } = await supabase
+          .from('comprovantes')
+          .insert([{
+            cliente_nome: clientName,
+            total: finalTotal,
+            data_emissao: nowIso
+          }])
+          .select()
+          .single();
 
-        itensToInsert.push({
-          comprovante_id: comprovante.id,
-          nome_produto: '__BELCONFORT_RECEIPT_SNAPSHOT__:' + snapshotPayload,
-          quantidade: 0,
-          preco: 0
-        });
+        if (compError) {
+          console.error('[Supabase] Erro ao salvar comprovante:', compError);
+        } else if (comprovante?.id) {
+          createdId = comprovante.id;
 
-        const { error: itemsError } = await supabase
-          .from('itens_comprovante')
-          .insert(itensToInsert);
+          // 1. Salvar os itens do carrinho na tabela itens_comprovante
+          const itensToInsert: any[] = (exportData.products || []).map(p => ({
+            comprovante_id: comprovante.id,
+            nome_produto: p.name,
+            quantidade: p.quantity,
+            preco: p.price
+          }));
 
-        if (itemsError) {
-          console.error('[Supabase] Erro ao salvar itens/snapshot no Supabase:', itemsError);
-        } else {
-          console.log('[Supabase] Comprovante e snapshot completo registrados! ID:', comprovante.id);
+          // 2. Salvar o SNAPSHOT COMPLETO com 100% dos dados da emissão (endereço, vendedor, descontos, garantias, timestamps, etc.)
+          const snapshotPayload = JSON.stringify({
+            ...exportData,
+            comprovanteId: comprovante.id,
+            totalValue: finalTotal,
+            savedAt: nowIso
+          });
+
+          itensToInsert.push({
+            comprovante_id: comprovante.id,
+            nome_produto: '__BELCONFORT_RECEIPT_SNAPSHOT__:' + snapshotPayload,
+            quantidade: 0,
+            preco: 0
+          });
+
+          const { error: itemsError } = await supabase
+            .from('itens_comprovante')
+            .insert(itensToInsert);
+
+          if (itemsError) {
+            console.error('[Supabase] Erro ao salvar itens/snapshot no Supabase:', itemsError);
+          } else {
+            console.log('[Supabase] Comprovante e snapshot completo registrados! ID:', comprovante.id);
+          }
         }
-
-        // 3. Salvar em cache no localStorage para acesso ultrarrápido
-        try {
-          const storedSnapshots = JSON.parse(localStorage.getItem('belconfort_receipt_snapshots') || '{}');
-          storedSnapshots[comprovante.id] = { ...exportData, comprovanteId: comprovante.id, totalValue: finalTotal };
-          localStorage.setItem('belconfort_receipt_snapshots', JSON.stringify(storedSnapshots));
-        } catch (e) {
-          console.error('[Storage] Erro ao salvar snapshot local:', e);
-        }
-
-        // 4. Salvar backup no servidor Node
-        try {
-          fetch('/api/receipts-snapshots', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              id: comprovante.id,
-              snapshot: { ...exportData, comprovanteId: comprovante.id, totalValue: finalTotal }
-            })
-          }).catch(() => {});
-        } catch {}
-
-        return comprovante.id;
+      } catch (subErr) {
+        console.error('[Supabase] Falha ao conectar ao Supabase:', subErr);
       }
+
+      // ID consolidado (do Supabase ou identificador universal seguro para contingência)
+      const receiptId = createdId || ('comp-' + Date.now() + '-' + Math.random().toString(36).substring(2, 8));
+
+      // 3. Salvar em cache no localStorage para acesso ultrarrápido nesta máquina
+      try {
+        const storedSnapshots = JSON.parse(localStorage.getItem('belconfort_receipt_snapshots') || '{}');
+        storedSnapshots[receiptId] = { ...exportData, comprovanteId: receiptId, totalValue: finalTotal, savedAt: nowIso };
+        localStorage.setItem('belconfort_receipt_snapshots', JSON.stringify(storedSnapshots));
+      } catch (e) {
+        console.error('[Storage] Erro ao salvar snapshot local:', e);
+      }
+
+      // 4. Salvar backup no servidor Node para TODOS os usuários e navegadores compartilharem o mesmo histórico
+      try {
+        await fetch('/api/receipts-snapshots', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: receiptId,
+            snapshot: { ...exportData, comprovanteId: receiptId, totalValue: finalTotal, savedAt: nowIso }
+          })
+        });
+      } catch (servErr) {
+        console.warn('[Server] Falha ao enviar snapshot para o servidor:', servErr);
+      }
+
+      lastSavedReceiptRef.current = { signature, id: receiptId };
+      return receiptId;
     } catch (err) {
-      console.error('[Supabase] Erro inesperado ao salvar no Supabase:', err);
+      console.error('[BelConfort] Erro ao registrar comprovante no histórico:', err);
     }
     return null;
   };
@@ -1281,16 +1308,19 @@ export default function App() {
     const exportData = getDataForExport(overrideSalesperson);
     try {
       await saveReceiptToDatabase(exportData, totalValue);
+      await generateReceiptPDF(exportData);
+    } catch (err) {
+      console.error("Erro ao gerar PDF:", err);
     } finally {
       setIsSavingSupabase(false);
-      // Gerar PDF com todos os dados de emissão
-      await generateReceiptPDF(exportData);
     }
   };
 
   const executeSendEmail = async (overrideSalesperson?: string) => {
+    setIsSavingSupabase(true);
+    const exportData = getDataForExport(overrideSalesperson);
     try {
-      const exportData = getDataForExport(overrideSalesperson);
+      await saveReceiptToDatabase(exportData, totalValue);
       const blob = await getReceiptBlob(exportData);
       const safeName = exportData.name ? exportData.name.toUpperCase() : 'CLIENTE';
       const fileName = `COMPROVANTE - ${safeName}.pdf`;
@@ -1316,12 +1346,16 @@ export default function App() {
       }
     } catch (error) {
       console.error("Erro ao compartilhar:", error);
+    } finally {
+      setIsSavingSupabase(false);
     }
   };
 
   const executeSendWhatsApp = async (overrideSalesperson?: string) => {
+    setIsSavingSupabase(true);
+    const exportData = getDataForExport(overrideSalesperson);
     try {
-      const exportData = getDataForExport(overrideSalesperson);
+      await saveReceiptToDatabase(exportData, totalValue);
       const blob = await getReceiptBlob(exportData);
       const safeName = exportData.name ? exportData.name.toUpperCase() : 'CLIENTE';
       const fileName = `COMPROVANTE - ${safeName}.pdf`;
@@ -1351,6 +1385,8 @@ export default function App() {
       }
     } catch (error) {
       console.error("Erro ao enviar para WhatsApp:", error);
+    } finally {
+      setIsSavingSupabase(false);
     }
   };
 
@@ -2452,16 +2488,18 @@ export default function App() {
                   </button>
                   <button
                     onClick={handleSendWhatsApp}
-                    className="flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs sm:text-sm font-medium transition-colors shadow-lg shadow-green-900/20"
+                    disabled={isSavingSupabase}
+                    className="flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-75 disabled:cursor-not-allowed text-white rounded-lg text-xs sm:text-sm font-medium transition-colors shadow-lg shadow-green-900/20"
                   >
-                    <MessageCircle className="w-4 h-4" />
+                    {isSavingSupabase ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageCircle className="w-4 h-4" />}
                     WhatsApp
                   </button>
                   <button
                     onClick={handleSendEmail}
-                    className="flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-xs sm:text-sm font-medium transition-colors shadow-lg shadow-gray-900/20"
+                    disabled={isSavingSupabase}
+                    className="flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-75 disabled:cursor-not-allowed text-white rounded-lg text-xs sm:text-sm font-medium transition-colors shadow-lg shadow-gray-900/20"
                   >
-                    <Mail className="w-4 h-4" />
+                    {isSavingSupabase ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
                     E-mail
                   </button>
                   <button
