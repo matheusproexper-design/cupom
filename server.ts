@@ -438,6 +438,7 @@ async function startServer() {
   });
 
   const customCatalogPath = path.join(process.cwd(), 'custom_catalog.json');
+  const ADMIN_PASSWORD = '50735073Math@';
 
   // Helper to load custom catalog from disk
   const loadCustomCatalog = (): any[] => {
@@ -469,9 +470,13 @@ async function startServer() {
   // API Route to add a product to types.ts and custom_catalog.json
   app.post("/api/catalog", async (req, res) => {
     try {
-      const { name, price } = req.body;
+      const { name, price, password } = req.body;
       if (!name || typeof price !== "number") {
         return res.status(400).json({ error: "Nome e preço são obrigatórios." });
+      }
+
+      if (password && password !== ADMIN_PASSWORD) {
+        return res.status(401).json({ error: "Senha de administrador incorreta." });
       }
 
       const formattedName = name.trim().toUpperCase();
@@ -513,7 +518,8 @@ async function startServer() {
         await supabase.from('produtos').insert([{
           codigo: Math.floor(100000 + Math.random() * 900000).toString(),
           nome: formattedName,
-          preco: price
+          preco: price,
+          criado_em: new Date().toISOString()
         }]);
         // Invalidate server cache so next parse has the new item
         cachedSupabaseProducts = [];
@@ -532,9 +538,13 @@ async function startServer() {
   // DELETE /api/catalog - Removes a custom product from types.ts and custom_catalog.json
   app.delete("/api/catalog", async (req, res) => {
     try {
-      const { name } = req.body;
+      const { name, password } = req.body;
       if (!name) {
         return res.status(400).json({ error: "Nome é obrigatório." });
+      }
+
+      if (password && password !== ADMIN_PASSWORD) {
+        return res.status(401).json({ error: "Senha de administrador incorreta." });
       }
 
       const formattedName = name.trim().toUpperCase();

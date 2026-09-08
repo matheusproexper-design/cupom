@@ -21,7 +21,8 @@ import JsBarcode from 'jsbarcode';
 
 const STORAGE_KEY = 'belconfort_receipt_data';
 const TEAM_STORAGE_KEY = 'belconfort_team_list';
-const ADMIN_DELETE_PASSWORD = '50735073Math@';
+const ADMIN_PASSWORD = '50735073Math@';
+const ADMIN_DELETE_PASSWORD = ADMIN_PASSWORD;
 
 // Initialize Fuse instance outside component for performance
 const fuse = new Fuse(PRODUCTS_LIST, {
@@ -63,7 +64,17 @@ export default function App() {
       const savedData = localStorage.getItem(STORAGE_KEY);
       if (savedData) {
         // Merge with INITIAL_DATA to ensure schema compatibility if fields are added later
-        return { ...INITIAL_DATA, ...JSON.parse(savedData) };
+        const parsed = JSON.parse(savedData);
+        const cleanedProducts = Array.isArray(parsed.products)
+          ? parsed.products.filter((p: any) => p && p.name && p.name.trim() !== '')
+          : [];
+        const isFreshOrEmptyClient = cleanedProducts.length === 0 && (!parsed.name || parsed.name.trim() === '');
+        return { 
+          ...INITIAL_DATA, 
+          ...parsed, 
+          saleCode: isFreshOrEmptyClient ? '' : (parsed.saleCode || ''),
+          products: cleanedProducts 
+        };
       }
     } catch (error) {
       console.error("Failed to load from local storage", error);
@@ -249,16 +260,31 @@ export default function App() {
   const [deleteProductPasswordError, setDeleteProductPasswordError] = useState("");
   const [isDeletingProduct, setIsDeletingProduct] = useState(false);
 
-  // Fetch all products from Supabase catalog
+  // Security password state for registering new products to catalog/Supabase
+  const [adminAddProductPassword, setAdminAddProductPassword] = useState("");
+  const [showAdminAddProductPassword, setShowAdminAddProductPassword] = useState(false);
+  const [adminAddProductPasswordError, setAdminAddProductPasswordError] = useState("");
+  const [isAddProductAuthModalOpen, setIsAddProductAuthModalOpen] = useState(false);
+
+  // Fetch all products from Supabase catalog (sorted from newest to oldest)
   const fetchCatalogFromSupabase = async () => {
     setIsLoadingCatalog(true);
     try {
       const { data, error } = await supabase
         .from('produtos')
         .select('*')
-        .order('nome', { ascending: true });
+        .order('criado_em', { ascending: false, nullsFirst: false });
       if (!error && data) {
-        setAllSupabaseCatalog(data);
+        // Garante que a ordem seja estritamente dos mais recentes para os mais antigos
+        const sorted = [...data].sort((a, b) => {
+          if (a.criado_em && b.criado_em) {
+            return new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime();
+          }
+          if (a.criado_em) return -1;
+          if (b.criado_em) return 1;
+          return 0;
+        });
+        setAllSupabaseCatalog(sorted);
       } else if (error) {
         console.error('[Supabase] Erro ao carregar catálogo completo:', error);
       }
@@ -397,7 +423,7 @@ export default function App() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ name, price }),
+        body: JSON.stringify({ name, price, password: ADMIN_PASSWORD }),
       });
       if (response.ok) {
         console.log(`[BelConfort Disk] Produto "${name}" gravado com sucesso no types.ts!`);
@@ -410,16 +436,7 @@ export default function App() {
     }
   };
 
-  const handleAddCustomProduct = async () => {
-    const name = computedProductName.trim();
-    if (!name) {
-      alert("Preencha os campos para formar o nome do produto.");
-      return;
-    }
-    
-    // Parse the default price (handling comma as decimal separator)
-    const priceValue = parseFloat(newProductPrice.replace('.', '').replace(',', '.') || "0");
-    
+  const executeSaveProductToCatalog = async (name: string, priceValue: number) => {
     setIsSavingCustomProduct(true);
     setCustomProductSuccess(null);
 
@@ -430,20 +447,23 @@ export default function App() {
       const { error } = await supabase.from('produtos').insert([{
         codigo: generatedCode,
         nome: name,
-        preco: priceValue
+        preco: priceValue,
+        criado_em: new Date().toISOString()
       }]);
 
       if (error) {
         console.error('[Supabase] Erro ao salvar novo produto:', error);
         alert(`Erro ao salvar no Supabase: ${error.message}`);
+        setIsSavingCustomProduct(false);
+        return;
       } else {
         setCustomProductSuccess(`Produto "${name}" salvo com sucesso no Supabase!`);
         setTimeout(() => setCustomProductSuccess(null), 4000);
       }
     } catch (err) {
       console.error('[Supabase] Erro inesperado ao salvar no Supabase:', err);
-    } finally {
       setIsSavingCustomProduct(false);
+      return;
     }
 
     const newProductItem: CatalogItem = {
@@ -465,6 +485,52 @@ export default function App() {
     setNewProdTamanho("");
     setNewProdCor("");
     setNewProductPrice("");
+    setAdminAddProductPassword("");
+    setAdminAddProductPasswordError("");
+    setIsAddProductAuthModalOpen(false);
+    setIsSavingCustomProduct(false);
+  };
+
+  const handleAddCustomProduct = async () => {
+    const name = computedProductName.trim();
+    if (!name) {
+      alert("Preencha os campos para formar o nome do produto.");
+      return;
+    }
+    
+    // Parse the default price (handling comma as decimal separator)
+    const priceValue = parseFloat(newProductPrice.replace('.', '').replace(',', '.') || "0");
+    if (isNaN(priceValue) || priceValue <= 0) {
+      alert("Informe um preço padrão válido para o produto.");
+      return;
+    }
+
+    if (!adminAddProductPassword.trim()) {
+      setIsAddProductAuthModalOpen(true);
+      setAdminAddProductPasswordError("");
+      return;
+    }
+
+    if (adminAddProductPassword !== ADMIN_PASSWORD) {
+      setAdminAddProductPasswordError("Senha de administrador incorreta.");
+      return;
+    }
+
+    await executeSaveProductToCatalog(name, priceValue);
+  };
+
+  const handleConfirmAddProductModal = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const name = computedProductName.trim();
+    if (!name) return;
+    const priceValue = parseFloat(newProductPrice.replace('.', '').replace(',', '.') || "0");
+
+    if (adminAddProductPassword !== ADMIN_PASSWORD) {
+      setAdminAddProductPasswordError("Senha de administrador incorreta.");
+      return;
+    }
+
+    await executeSaveProductToCatalog(name, priceValue);
   };
 
   const handleRequestDeleteProduct = (id?: string, name?: string, preco?: number, codigo?: string) => {
@@ -551,7 +617,7 @@ export default function App() {
     const priceValue = parseFloat(selectedPrice.replace('.', '').replace(',', '.') || "0");
     const quantityValue = parseInt(selectedQuantity) || 1;
     
-    // Auto-save to catalog and Supabase if it's a new product
+    // Se o produto não existe no catálogo, adiciona à lista local da sessão para o comprovante, sem poluir o Supabase sem senha de adm
     const exists = fullCatalog.some(p => p.name.toUpperCase() === productName.trim().toUpperCase());
     if (!exists) {
       const newProductItem: CatalogItem = {
@@ -559,19 +625,6 @@ export default function App() {
         price: priceValue
       };
       setCustomProducts(prev => [...prev, newProductItem]);
-      
-      // Auto-save to types.ts on local disk
-      saveProductToTypesTS(productName, priceValue);
-
-      // Auto-save directly to Supabase
-      supabase.from('produtos').insert([{
-        codigo: Math.floor(100000 + Math.random() * 900000).toString(),
-        nome: productName,
-        preco: priceValue
-      }]).then(({ error }) => {
-        if (error) console.error('[Supabase] Erro ao cadastrar produto:', error);
-        fetchCatalogFromSupabase();
-      });
     }
 
     // Generate a pseudo-code (Numeric only - 6 digits) or use Supabase product code
@@ -666,7 +719,7 @@ export default function App() {
       : [];
 
     if (rawList.length === 0) {
-      return [{ code: '101', name: '', quantity: 1, price: 0, warrantyTime: '1', warrantyUnit: 'ANOS' }];
+      return [];
     }
 
     const parsedProducts: Product[] = [];
@@ -742,7 +795,7 @@ export default function App() {
 
     return parsedProducts.length > 0
       ? parsedProducts
-      : [{ code: '101', name: '', quantity: 1, price: 0, warrantyTime: '1', warrantyUnit: 'ANOS' }];
+      : [];
   };
 
   const handleSmartImport = async () => {
@@ -760,7 +813,7 @@ export default function App() {
       // Zera o cliente anterior e inicia um novo cliente do zero com os dados importados
       setData({
         ...INITIAL_DATA,
-        saleCode: result.clientData?.saleCode || Math.floor(100000 + Math.random() * 900000).toString(),
+        saleCode: result.clientData?.saleCode || '',
         date: result.clientData?.date || new Date().toISOString().split('T')[0],
         salesperson: data.salesperson || localStorage.getItem('belconfort_saved_salesperson') || '',
         ...result.clientData,
@@ -788,7 +841,7 @@ export default function App() {
 
         setData({
           ...INITIAL_DATA,
-          saleCode: fallbackResult.clientData?.saleCode || Math.floor(100000 + Math.random() * 900000).toString(),
+          saleCode: fallbackResult.clientData?.saleCode || '',
           date: fallbackResult.clientData?.date || new Date().toISOString().split('T')[0],
           salesperson: data.salesperson || localStorage.getItem('belconfort_saved_salesperson') || '',
           ...fallbackResult.clientData,
@@ -882,7 +935,7 @@ export default function App() {
         // Zera completamente o cliente anterior e inicia um novo do zero com os dados importados
         setData({
           ...INITIAL_DATA,
-          saleCode: result.clientData?.saleCode || Math.floor(100000 + Math.random() * 900000).toString(),
+          saleCode: result.clientData?.saleCode || '',
           date: result.clientData?.date || new Date().toISOString().split('T')[0],
           ...result.clientData,
           salesperson: finalSalesperson,
@@ -908,7 +961,7 @@ export default function App() {
 
           setData({
             ...INITIAL_DATA,
-            saleCode: fallbackResult.clientData?.saleCode || Math.floor(100000 + Math.random() * 900000).toString(),
+            saleCode: fallbackResult.clientData?.saleCode || '',
             date: fallbackResult.clientData?.date || new Date().toISOString().split('T')[0],
             ...fallbackResult.clientData,
             salesperson: finalSalesperson,
@@ -938,10 +991,10 @@ export default function App() {
       // Inicia um novo cliente do zero, zerando 100% dos dados anteriores
       setData({
         ...INITIAL_DATA,
-        saleCode: Math.floor(100000 + Math.random() * 900000).toString(),
+        saleCode: '',
         date: new Date().toISOString().split('T')[0],
         salesperson: finalSalesperson,
-        products: [{ code: '101', name: '', quantity: 1, price: 0, warrantyTime: '1', warrantyUnit: 'ANOS' }],
+        products: [],
       });
       setIsWelcomeModalOpen(false);
     }
@@ -1100,11 +1153,12 @@ export default function App() {
   };
 
   // --- TOTAL CALCULATIONS ---
-  const subtotal = data.products.reduce((acc, curr) => {
+  const validProducts = (data.products || []).filter(p => p && p.name && p.name.trim() !== '');
+  const subtotal = validProducts.reduce((acc, curr) => {
     const itemTotal = curr.price * curr.quantity;
     return acc + (curr.isExchange ? -itemTotal : itemTotal);
   }, 0);
-  const bundleDetails = getBundleDetails(data.products);
+  const bundleDetails = getBundleDetails(validProducts);
   const bundleDiscount = bundleDetails.totalDiscount;
   const bundleDiscountLabel = bundleDetails.label;
   
@@ -1128,6 +1182,7 @@ export default function App() {
 
     return {
         ...data,
+        products: validProducts,
         salesperson: finalSalesperson,
         bundleDiscount: bundleDiscount,
         bundleLabel: bundleDiscountLabel, 
@@ -1299,18 +1354,51 @@ export default function App() {
     }
   };
 
-  // Obrigatório: para conseguir gerar o comprovante o usuário deve colocar a senha de usuário
+  // Se a pessoa já se identificou no pop-up, não pede senha novamente ao gerar o comprovante
   const handleGeneratePDF = () => {
+    const currentSalesperson = (data.salesperson && data.salesperson.trim()) || localStorage.getItem('belconfort_saved_salesperson') || '';
+    const alreadyIdentified = isIdentified || (hasIdentified && Boolean(currentSalesperson)) || Boolean(sessionStorage.getItem('belconfort_identified_session') === 'true' && currentSalesperson);
+    
+    if (alreadyIdentified && currentSalesperson) {
+      if (!data.salesperson) {
+        setData(prev => ({ ...prev, salesperson: currentSalesperson }));
+      }
+      executeGeneratePDF(currentSalesperson);
+      return;
+    }
+
     setPendingAuthAction('pdf');
     setIsStoreAuthModalOpen(true);
   };
 
   const handleSendEmail = () => {
+    const currentSalesperson = (data.salesperson && data.salesperson.trim()) || localStorage.getItem('belconfort_saved_salesperson') || '';
+    const alreadyIdentified = isIdentified || (hasIdentified && Boolean(currentSalesperson)) || Boolean(sessionStorage.getItem('belconfort_identified_session') === 'true' && currentSalesperson);
+    
+    if (alreadyIdentified && currentSalesperson) {
+      if (!data.salesperson) {
+        setData(prev => ({ ...prev, salesperson: currentSalesperson }));
+      }
+      executeSendEmail(currentSalesperson);
+      return;
+    }
+
     setPendingAuthAction('email');
     setIsStoreAuthModalOpen(true);
   };
 
   const handleSendWhatsApp = () => {
+    const currentSalesperson = (data.salesperson && data.salesperson.trim()) || localStorage.getItem('belconfort_saved_salesperson') || '';
+    const alreadyIdentified = isIdentified || (hasIdentified && Boolean(currentSalesperson)) || Boolean(sessionStorage.getItem('belconfort_identified_session') === 'true' && currentSalesperson);
+    
+    if (alreadyIdentified && currentSalesperson) {
+      if (!data.salesperson) {
+        setData(prev => ({ ...prev, salesperson: currentSalesperson }));
+      }
+      executeSendWhatsApp(currentSalesperson);
+      return;
+    }
+
     setPendingAuthAction('whatsapp');
     setIsStoreAuthModalOpen(true);
   };
@@ -1677,37 +1765,78 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* Preço e Botão de Salvar */}
-                    <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-end pt-1">
-                      <div className="flex-1">
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-300 mb-1">
-                          Preço Padrão (R$)
-                        </label>
-                        <Input
-                          label="Preço Padrão (R$)"
-                          value={newProductPrice}
-                          onChange={(e) => setNewProductPrice(e.target.value)}
-                          placeholder="EX: 1200,00"
-                          icon={<Tag className="w-4 h-4"/>}
-                        />
+                    {/* Preço, Senha de ADM e Botão de Salvar */}
+                    <div className="space-y-3 pt-1">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-300 mb-1">
+                            Preço Padrão (R$)
+                          </label>
+                          <Input
+                            label="Preço Padrão (R$)"
+                            value={newProductPrice}
+                            onChange={(e) => setNewProductPrice(e.target.value)}
+                            placeholder="EX: 1200,00"
+                            icon={<Tag className="w-4 h-4"/>}
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-purple-400 mb-1 flex items-center justify-between">
+                            <span className="flex items-center gap-1.5">
+                              <Lock className="w-3.5 h-3.5 text-purple-400" />
+                              Senha de Administrador <span className="text-red-400">*</span>
+                            </span>
+                            <span className="text-[9px] text-gray-400 font-normal">Obrigatória</span>
+                          </label>
+                          <div className="relative">
+                            <input
+                              type={showAdminAddProductPassword ? 'text' : 'password'}
+                              value={adminAddProductPassword}
+                              onChange={(e) => {
+                                setAdminAddProductPassword(e.target.value);
+                                if (adminAddProductPasswordError) setAdminAddProductPasswordError('');
+                              }}
+                              placeholder="Digite a senha de adm..."
+                              className="w-full bg-gray-950 border border-gray-700 focus:border-purple-500 text-gray-100 text-xs rounded-xl pl-3 pr-10 py-3 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500/20 transition-all font-mono"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowAdminAddProductPassword(!showAdminAddProductPassword)}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200"
+                              tabIndex={-1}
+                            >
+                              {showAdminAddProductPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                          </div>
+                          {adminAddProductPasswordError && (
+                            <p className="text-xs text-red-400 font-medium flex items-center gap-1 mt-1">
+                              <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                              {adminAddProductPasswordError}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                      <button
-                        onClick={handleAddCustomProduct}
-                        disabled={!computedProductName || !newProductPrice.trim() || isSavingCustomProduct}
-                        className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-6 py-3.5 rounded-lg transition-all flex items-center justify-center gap-2 font-semibold text-xs uppercase shadow-lg shadow-blue-900/30 active:scale-95 sm:min-w-[200px]"
-                      >
-                        {isSavingCustomProduct ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            Salvando no Supabase...
-                          </>
-                        ) : (
-                          <>
-                            <Plus className="w-4 h-4" />
-                            Salvar no Supabase
-                          </>
-                        )}
-                      </button>
+
+                      <div className="flex justify-end pt-1">
+                        <button
+                          onClick={handleAddCustomProduct}
+                          disabled={!computedProductName || !newProductPrice.trim() || isSavingCustomProduct}
+                          className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-8 py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 font-semibold text-xs uppercase shadow-lg shadow-blue-900/30 active:scale-95"
+                        >
+                          {isSavingCustomProduct ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              Salvando no Supabase...
+                            </>
+                          ) : (
+                            <>
+                              <ShieldCheck className="w-4 h-4 text-blue-200" />
+                              Cadastrar no Catálogo (Supabase)
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -1752,12 +1881,22 @@ export default function App() {
                       ) : (
                         (() => {
                           const displayList = allSupabaseCatalog.length > 0 
-                            ? allSupabaseCatalog.filter(p => 
-                                !catalogSearchTerm.trim() || 
-                                p.nome.toLowerCase().includes(catalogSearchTerm.toLowerCase()) || 
-                                (p.codigo && p.codigo.includes(catalogSearchTerm))
-                              )
-                            : customProducts
+                            ? allSupabaseCatalog
+                                .filter(p => 
+                                  !catalogSearchTerm.trim() || 
+                                  p.nome.toLowerCase().includes(catalogSearchTerm.toLowerCase()) || 
+                                  (p.codigo && p.codigo.includes(catalogSearchTerm))
+                                )
+                                .sort((a, b) => {
+                                  if (a.criado_em && b.criado_em) {
+                                    return new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime();
+                                  }
+                                  if (a.criado_em) return -1;
+                                  if (b.criado_em) return 1;
+                                  return 0;
+                                })
+                            : [...customProducts]
+                                .reverse()
                                 .filter(p => !catalogSearchTerm.trim() || p.name.toLowerCase().includes(catalogSearchTerm.toLowerCase()))
                                 .map((p, idx) => ({ id: `custom-${idx}`, codigo: `PROD-${idx}`, nome: p.name, preco: p.price }));
 
@@ -2355,20 +2494,6 @@ export default function App() {
             )}
 
             <div className="bg-gray-900 border border-gray-800 rounded-xl sm:rounded-2xl p-2 sm:p-8 shadow-2xl relative w-full overflow-hidden">
-                <div className="absolute top-0 right-0 p-3 sm:p-4 z-10">
-                    <span className="text-[10px] font-bold tracking-widest text-red-600 uppercase border border-red-500/40 bg-red-50 px-2 py-1 rounded backdrop-blur">PRÉVIA</span>
-                </div>
-
-                <div className="mb-3 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2 flex items-center justify-between text-amber-300 text-xs">
-                    <div className="flex items-center gap-2">
-                        <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
-                        <span><strong>Modo Prévia:</strong> O documento abaixo é apenas uma visualização preliminar e <u>não tem validade como comprovante</u>. Para emitir o comprovante oficial, utilize o botão "Gerar PDF".</span>
-                    </div>
-                    <span className="hidden sm:inline-block text-[9px] font-black uppercase tracking-wider text-amber-300 bg-amber-500/20 px-2 py-0.5 rounded border border-amber-500/30 whitespace-nowrap">
-                        Sem Valor Legal
-                    </span>
-                </div>
-                
                 <div className="bg-white text-gray-900 p-3 sm:p-8 rounded-lg shadow-sm min-h-[700px] sm:min-h-[800px] w-full max-w-full sm:max-w-lg mx-auto transform transition-all flex flex-col overflow-x-auto relative overflow-hidden">
                     
                     {/* MARCA D'ÁGUA GIGANTE DE PRÉVIA - NÃO VÁLIDO COMO COMPROVANTE */}
@@ -2455,8 +2580,8 @@ export default function App() {
                              <div className="text-right">TOTAL</div>
                          </div>
                          <div className="flex flex-col">
-                             {data.products.length > 0 ? (
-                                data.products.map((p, i) => (
+                             {validProducts.length > 0 ? (
+                                validProducts.map((p, i) => (
                                     <div 
                                         key={i} 
                                         className={`grid grid-cols-[40px_1fr_30px_60px_60px] text-[10px] py-2 border-b border-gray-200 gap-2 items-start px-1 rounded-sm ${
@@ -2747,6 +2872,109 @@ export default function App() {
         </div>
       )}
 
+      {/* Modal de Confirmação com Senha para Cadastrar Produto no Catálogo */}
+      {isAddProductAuthModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-150">
+          <div className="bg-gray-900 border border-purple-500/40 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-400 flex-shrink-0">
+                <ShieldAlert className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">Autorização de Administrador</h3>
+                <p className="text-xs text-gray-400">
+                  Informe a senha administrativa para cadastrar este novo produto no catálogo.
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-gray-950/80 border border-gray-800 rounded-xl p-3 text-xs space-y-1">
+              <p className="text-gray-400">
+                <span className="font-semibold text-gray-300">Produto:</span>{' '}
+                <span className="text-gray-100 font-bold uppercase">{computedProductName}</span>
+              </p>
+              {newProductPrice && (
+                <p className="text-gray-400">
+                  <span className="font-semibold text-gray-300">Preço Padrão:</span>{' '}
+                  <span className="text-green-400 font-bold">
+                    {parseFloat(newProductPrice.replace('.', '').replace(',', '.') || '0').toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  </span>
+                </p>
+              )}
+            </div>
+
+            <form onSubmit={handleConfirmAddProductModal} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-gray-300 flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5 text-purple-400" />
+                  Senha de Administrador
+                </label>
+                <div className="relative">
+                  <input
+                    type={showAdminAddProductPassword ? 'text' : 'password'}
+                    value={adminAddProductPassword}
+                    onChange={(e) => {
+                      setAdminAddProductPassword(e.target.value);
+                      if (adminAddProductPasswordError) setAdminAddProductPasswordError('');
+                    }}
+                    placeholder="Digite a senha de administrador..."
+                    autoFocus
+                    className="w-full bg-gray-950 border border-gray-700 focus:border-purple-500 text-gray-100 text-sm rounded-xl pl-3 pr-10 py-2.5 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500/20 transition-all font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowAdminAddProductPassword(!showAdminAddProductPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200"
+                    tabIndex={-1}
+                  >
+                    {showAdminAddProductPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                {adminAddProductPasswordError && (
+                  <p className="text-xs text-red-400 font-medium flex items-center gap-1 mt-1">
+                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                    {adminAddProductPasswordError}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAddProductAuthModalOpen(false);
+                    setAdminAddProductPassword('');
+                    setAdminAddProductPasswordError('');
+                  }}
+                  disabled={isSavingCustomProduct}
+                  className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-xl text-xs font-semibold transition-colors disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={!adminAddProductPassword || isSavingCustomProduct}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-colors shadow-lg shadow-purple-900/30 flex items-center gap-1.5"
+                >
+                  {isSavingCustomProduct ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Cadastrando...
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      Confirmar Cadastro
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Modal de Boas-Vindas / Importação Inteligente & Identificação Obrigatória do Vendedor */}
       {isWelcomeModalOpen && (
         <div className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-md flex items-center justify-center p-2.5 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
@@ -2823,10 +3051,10 @@ export default function App() {
                         setSearchTerm("");
                         setData({
                           ...INITIAL_DATA,
-                          saleCode: Math.floor(100000 + Math.random() * 900000).toString(),
+                          saleCode: '',
                           date: new Date().toISOString().split('T')[0],
                           salesperson: found.name,
-                          products: [{ code: '101', name: '', quantity: 1, price: 0, warrantyTime: '1', warrantyUnit: 'ANOS' }]
+                          products: []
                         });
                       } else {
                         setModalSalesperson("");

@@ -73,9 +73,9 @@ export const createPDFDoc = async (rawInputData: ReceiptData): Promise<jsPDF> =>
     }
   }
 
-  // 2. Filtra estritamente qualquer item de snapshot ou controle interno da tabela de produtos
+  // 2. Filtra estritamente qualquer item de snapshot ou controle interno da tabela de produtos, e itens sem nome
   data.products = (data.products || []).filter(p => 
-    p && p.name && !p.name.includes('__BELCONFORT_RECEIPT_SNAPSHOT__') && !p.name.startsWith('__')
+    p && p.name && p.name.trim() !== '' && !p.name.includes('__BELCONFORT_RECEIPT_SNAPSHOT__') && !p.name.startsWith('__')
   );
 
   const doc = new jsPDF();
